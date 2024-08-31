@@ -43,3 +43,84 @@ export function applyDropdownOption($select: HTMLSelectElement, value: string, n
   if (!isExisting) $select.options.add(new Option(name, value));
   $select.value = value;
 }
+
+type ElementPredictor<N extends string> = 
+N extends `${string}Content` ? HTMLDivElement :
+N extends `${string}Trigger` ? HTMLButtonElement :
+N extends `${string}Options` ? HTMLSelectElement :
+N extends `${string}ColorInput` ? HTMLInputElement :
+N extends `${string}Input` ? HTMLInputElement :
+N extends `${string}Output` ? HTMLInputElement :
+HTMLElement;
+type TypePredictor<N extends string> = 
+N extends `${string}Content` ? never :
+N extends `${string}Trigger` ? string :
+N extends `${string}Options` ? string :
+N extends `${string}ColorInput` ? string :
+N extends `${string}Input` ? number :
+N extends `${string}Output` ? number :
+never;
+
+
+
+/**
+ * Represents an HTML wrapper class.
+ * Type is inferred from the ID naming.
+ * Provides typing for valueed input elements.
+ * @template IDTYPE - The type of the element's ID.
+ * @template ElemType - The type of the HTML element.
+ * @template ValType - The type of the element's value.
+ * @argument id - The ID of the element.
+ * 
+ * @example
+ * // infered types
+ * const input = new HtmlWrapper("someInput"); // Is an HTMLInputElement and its value is number by default
+ * const stringInput = new HtmlWrapper<"",string>("someStringInput"); // Is an HTMLInputElement and its value is string
+ * 
+ * @example
+ * // explicit types
+ * const inputThatIsNotNamedCorrectly = new HtmlWrapper<"Input",string>("someString"); // Is an HTMLInputElement and its value is number
+ * // OR
+ * const inputThatIsNotNamedCorrectly = new HtmlWrapper<"",string,HTMLInputElement>("someString"); // Is an HTMLInputElement and its value is string
+ * 
+ */
+export class HtmlWrapper<IDTYPE extends string = "", ValType = TypePredictor<IDTYPE>, ElemType extends HTMLElement = ElementPredictor<IDTYPE>>{
+  // OPTIMIZATION: avoid duplicate DOM queries
+  // static cache to store instances - class global
+  static cache: Record<string, HtmlWrapper<any,any,any>> = {};
+  
+  // Member variables
+  #element!: ElemType;
+  
+  // Member functions
+  // Uses the IDTYPE to infer the type of the element
+  constructor(id: IDTYPE | string){
+    if(HtmlWrapper.cache[id] !== undefined){
+      return HtmlWrapper.cache[id];
+    }
+    this.#element = byId(id) as ElemType;
+    if (!this.#element) throw new Error(`Element ${id} not found`);
+    HtmlWrapper.cache[id] = this;
+  }
+
+  get element(){
+    return this.#element;
+  }
+
+  get value() {
+    return (this.#element as unknown as HTMLInputElement)?.value as unknown as ValType;
+  }
+
+  set value(v:ValType) {
+    (this.#element as unknown as HTMLInputElement).value = v as any;
+  }
+
+  get style() {
+    return this.#element.style;
+  }
+  
+  on(event: string, callback: (e: Event) => void) {
+    this.#element.addEventListener(event, callback);
+  }
+
+}

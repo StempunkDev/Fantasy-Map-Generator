@@ -5,7 +5,7 @@ import {precreatedHeightmaps} from "config/precreated-heightmaps";
 import {lock, locked, unlock} from "scripts/options/lock";
 import {clearMainTip, tip} from "scripts/tooltips";
 import {last} from "utils/arrayUtils";
-import {applyDropdownOption} from "utils/nodeUtils";
+import {applyDropdownOption, HtmlWrapper} from "utils/nodeUtils";
 import {minmax, rn} from "utils/numberUtils";
 import {gauss, P, rand, rw} from "utils/probabilityUtils";
 import {byId, stored} from "utils/shorthands";
@@ -36,7 +36,8 @@ const tooltip = byId("tooltip")! as HTMLDivElement;
 // Options pane elements
 const optionsTrigger = byId("optionsTrigger")! as HTMLButtonElement;
 const regenerate = byId("regenerate")! as HTMLButtonElement;
-const optionsDiv = byId("options")! as HTMLDivElement;
+const optionsDiv = byId("optionsContainer")! as HTMLDivElement;
+// const optionsDiv = new HtmlWrapper<"",HTMLDivElement>("optionsContainer");
 const collapsible = byId("collapsible")! as HTMLDivElement;
 const layersContent = byId("layersContent")! as HTMLDivElement;
 const styleContent = byId("styleContent")! as HTMLDivElement;
@@ -45,10 +46,11 @@ const toolsContent = byId("toolsContent")! as HTMLDivElement;
 const aboutContent = byId("aboutContent")! as HTMLDivElement;
 const optionsContent = byId("optionsContent")! as HTMLDivElement;
 const alertMessage = byId("alertMessage")! as HTMLDivElement;
-const dialogDiv = byId("dialogs")! as HTMLDivElement;
-
+// const dialogDiv = byId("dialogs")! as HTMLDivElement;
+const dialogDiv = new HtmlWrapper<"Content">("dialogs");
 // Number inputs
-const themeColorInput = byId("themeColorInput")! as HTMLInputElement;
+// const themeColorInput = byId("themeColorInput")! as HTMLInputElement;
+const themeColorInput = new HtmlWrapper("themeColorInput")
 const themeHueInput = byId("themeHueInput")! as HTMLInputElement;
 
 const transparencyInput = byId("transparencyInput")! as HTMLInputElement;
@@ -72,8 +74,10 @@ const uiSizeOutput = byId("uiSizeOutput")! as HTMLInputElement;
 const distanceUnitInput = byId("distanceUnitInput")! as HTMLSelectElement;
 const heightUnitInput = byId("heightUnitInput")! as HTMLSelectElement;
 
+const regionsInput = byId("regionsInput")! as HTMLInputElement;
+
 // Text inputs
-const mapName = byId("mapName")! as HTMLInputElement;
+const mapName = new HtmlWrapper<"Input", string>("mapName");
 const templateInput = byId("templateInput")! as HTMLSelectElement
 const culturesSet = byId("culturesSet")! as HTMLSelectElement;
 const culturesOutput = byId("culturesOutput")! as HTMLInputElement;
