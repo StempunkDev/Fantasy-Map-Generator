@@ -15,6 +15,10 @@ const burgLabelsRenderer = (): void => {
   TIME && console.time("drawBurgLabels");
   createLabelGroups();
 
+  // Clear existing burg labels from pack.labels
+  if (!pack.labels) pack.labels = [];
+  pack.labels = pack.labels.filter((label) => label.type !== "burg");
+
   for (const { name } of options.burgs.groups as BurgGroup[]) {
     const burgsInGroup = pack.burgs.filter(
       (b) => b.group === name && !b.removed,
@@ -40,6 +44,17 @@ const burgLabelsRenderer = (): void => {
       .attr("dx", `${dx}em`)
       .attr("dy", `${dy}em`)
       .text((d) => d.name!);
+
+    // Add to pack.labels
+    burgsInGroup.forEach((burg) => {
+      pack.labels.push({
+        i: `burgLabel${burg.i}`,
+        type: "burg",
+        name: burg.name!,
+        group: name,
+        burgId: burg.i!,
+      });
+    });
   }
 
   TIME && console.timeEnd("drawBurgLabels");
@@ -66,11 +81,35 @@ const drawBurgLabelRenderer = (burg: Burg): void => {
     .attr("dx", `${dx}em`)
     .attr("dy", `${dy}em`)
     .text(burg.name!);
+
+  // Update pack.labels
+  if (!pack.labels) pack.labels = [];
+  const labelId = `burgLabel${burg.i}`;
+  const existingIndex = pack.labels.findIndex((l) => l.i === labelId);
+  const labelData = {
+    i: labelId,
+    type: "burg" as const,
+    name: burg.name!,
+    group: burg.group!,
+    burgId: burg.i!,
+  };
+
+  if (existingIndex >= 0) {
+    pack.labels[existingIndex] = labelData;
+  } else {
+    pack.labels.push(labelData);
+  }
 };
 
 const removeBurgLabelRenderer = (burgId: number): void => {
   const existingLabel = document.getElementById(`burgLabel${burgId}`);
   if (existingLabel) existingLabel.remove();
+
+  // Remove from pack.labels
+  if (pack.labels) {
+    const labelId = `burgLabel${burgId}`;
+    pack.labels = pack.labels.filter((l) => l.i !== labelId);
+  }
 };
 
 function createLabelGroups(): void {

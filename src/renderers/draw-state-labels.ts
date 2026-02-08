@@ -39,6 +39,20 @@ const stateLabelsRenderer = (list?: number[]): void => {
   const { cells, states, features } = pack;
   const stateIds = cells.state;
 
+  // Initialize pack.labels if needed
+  if (!pack.labels) pack.labels = [];
+
+  // Clear existing state labels from pack.labels if regenerating all
+  if (!list) {
+    pack.labels = pack.labels.filter((label) => label.type !== "state");
+  } else {
+    // Clear only specific state labels
+    list.forEach((stateId) => {
+      const labelId = `stateLabel${stateId}`;
+      pack.labels = pack.labels.filter((l) => l.i !== labelId);
+    });
+  }
+
   // increase step to 15 or 30 to make it faster and more horyzontal
   // decrease step to 5 to improve accuracy
   const ANGLE_STEP = 9;
@@ -210,6 +224,32 @@ const stateLabelsRenderer = (list?: number[]): void => {
         130,
       );
       textElement.setAttribute("font-size", `${correctedRatio}%`);
+    }
+
+    // Store all generated labels in pack.labels
+    for (const [stateId, pathPoints] of labelPaths) {
+      const labelId = `stateLabel${stateId}`;
+      const textEl = document.getElementById(labelId);
+      
+      if (textEl) {
+        const textPathEl = textEl.querySelector("textPath");
+        const lines: string[] = [];
+        textPathEl?.querySelectorAll("tspan").forEach((tspan) => {
+          lines.push(tspan.textContent || "");
+        });
+
+        pack.labels.push({
+          i: labelId,
+          type: "state",
+          name: lines.join("|"),
+          stateId: stateId,
+          points: pathPoints,
+          startOffset: parseFloat(textPathEl?.getAttribute("startOffset") || "50"),
+          fontSize: parseFloat(textPathEl?.getAttribute("font-size") || "100"),
+          letterSpacing: parseFloat(textPathEl?.getAttribute("letter-spacing") || "0"),
+          transform: textEl.getAttribute("transform") || "",
+        });
+      }
     }
   }
 

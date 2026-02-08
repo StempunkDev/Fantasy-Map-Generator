@@ -613,6 +613,7 @@ async function generate(options) {
     else delete grid.cells.h;
     grid.cells.h = await HeightmapGenerator.generate(grid);
     pack = {}; // reset pack
+    pack.labels = []; // initialize labels array
 
     Features.markupGrid();
     addLakesInDeepDepressions();
