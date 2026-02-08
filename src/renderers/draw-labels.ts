@@ -12,6 +12,7 @@ export interface Label {
   name: string;
   group?: string;
   points?: [number, number][];
+  pathData?: string;
   startOffset?: number;
   fontSize?: number;
   letterSpacing?: number;

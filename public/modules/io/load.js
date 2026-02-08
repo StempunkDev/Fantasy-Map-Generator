@@ -752,11 +752,9 @@ async function parseLoadedData(data, mapVersion) {
             const pathId = textPathEl.attr("href")?.replace("#textPath_", "");
             const path = pathId ? defs.select(`#textPath_${id}`) : null;
             
-            const points = [];
+            let pathData;
             if (path && !path.empty()) {
-              const pathData = path.attr("d");
-              // Simple extraction - just store the path data as string for now
-              // Will be properly parsed when needed
+              pathData = path.attr("d");
             }
             
             const lines = [];
@@ -769,6 +767,7 @@ async function parseLoadedData(data, mapVersion) {
               type: "state",
               name: lines.join("|"),
               stateId: stateId,
+              pathData: pathData,
               startOffset: parseFloat(textPathEl.attr("startOffset")) || 50,
               fontSize: parseFloat(textPathEl.attr("font-size")) || 100,
               letterSpacing: parseFloat(textPathEl.attr("letter-spacing")) || 0,
@@ -788,6 +787,14 @@ async function parseLoadedData(data, mapVersion) {
             
             if (id) {
               const textPathEl = textEl.select("textPath");
+              const pathId = textPathEl.attr("href")?.replace("#textPath_", "");
+              const path = pathId ? defs.select(`#textPath_${id}`) : null;
+              
+              let pathData;
+              if (path && !path.empty()) {
+                pathData = path.attr("d");
+              }
+              
               const lines = [];
               textPathEl.selectAll("tspan").each(function() {
                 lines.push(d3.select(this).text());
@@ -798,6 +805,7 @@ async function parseLoadedData(data, mapVersion) {
                 type: "custom",
                 name: lines.join("|"),
                 group: groupId,
+                pathData: pathData,
                 startOffset: parseFloat(textPathEl.attr("startOffset")) || 50,
                 fontSize: parseFloat(textPathEl.attr("font-size")) || 100,
                 letterSpacing: parseFloat(textPathEl.attr("letter-spacing")) || 0,

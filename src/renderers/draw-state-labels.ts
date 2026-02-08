@@ -46,11 +46,10 @@ const stateLabelsRenderer = (list?: number[]): void => {
   if (!list) {
     pack.labels = pack.labels.filter((label) => label.type !== "state");
   } else {
-    // Clear only specific state labels
-    list.forEach((stateId) => {
-      const labelId = `stateLabel${stateId}`;
-      pack.labels = pack.labels.filter((l) => l.i !== labelId);
-    });
+    // Collect label IDs to remove
+    const labelsToRemove = list.map((stateId) => `stateLabel${stateId}`);
+    // Clear specific state labels in a single filter operation
+    pack.labels = pack.labels.filter((l) => !labelsToRemove.includes(l.i));
   }
 
   // increase step to 15 or 30 to make it faster and more horyzontal
