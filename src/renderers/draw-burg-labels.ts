@@ -1,4 +1,5 @@
 import type { Burg } from "../modules/burgs-generator";
+import { generateBurgLabelsData } from "../modules/labels-generator";
 
 declare global {
   var drawBurgLabels: () => void;
@@ -19,43 +20,34 @@ const burgLabelsRenderer = (): void => {
   if (!pack.labels) pack.labels = [];
   pack.labels = pack.labels.filter((label) => label.type !== "burg");
 
-  for (const { name } of options.burgs.groups as BurgGroup[]) {
-    const burgsInGroup = pack.burgs.filter(
-      (b) => b.group === name && !b.removed,
-    );
-    if (!burgsInGroup.length) continue;
+  // Generate label data using the generator
+  const generatedLabels = generateBurgLabelsData();
 
-    const labelGroup = burgLabels.select<SVGGElement>(`#${name}`);
+  // Render labels from generated data
+  for (const label of generatedLabels) {
+    const labelGroup = burgLabels.select<SVGGElement>(`#${label.group}`);
     if (labelGroup.empty()) continue;
 
     const dx = labelGroup.attr("data-dx") || 0;
     const dy = labelGroup.attr("data-dy") || 0;
 
+    const burg = pack.burgs[label.burgId!];
+    if (!burg || burg.removed) continue;
+
     labelGroup
-      .selectAll("text")
-      .data(burgsInGroup)
-      .enter()
       .append("text")
       .attr("text-rendering", "optimizeSpeed")
-      .attr("id", (d) => `burgLabel${d.i}`)
-      .attr("data-id", (d) => d.i!)
-      .attr("x", (d) => d.x)
-      .attr("y", (d) => d.y)
+      .attr("id", label.i)
+      .attr("data-id", label.burgId!)
+      .attr("x", burg.x)
+      .attr("y", burg.y)
       .attr("dx", `${dx}em`)
       .attr("dy", `${dy}em`)
-      .text((d) => d.name!);
-
-    // Add to pack.labels
-    burgsInGroup.forEach((burg) => {
-      pack.labels.push({
-        i: `burgLabel${burg.i}`,
-        type: "burg",
-        name: burg.name!,
-        group: name,
-        burgId: burg.i!,
-      });
-    });
+      .text(label.name);
   }
+
+  // Store labels in pack.labels
+  pack.labels.push(...generatedLabels);
 
   TIME && console.timeEnd("drawBurgLabels");
 };
@@ -71,10 +63,21 @@ const drawBurgLabelRenderer = (burg: Burg): void => {
   const dy = labelGroup.attr("data-dy") || 0;
 
   removeBurgLabelRenderer(burg.i!);
+
+  // Create label data
+  const labelData = {
+    i: `burgLabel${burg.i}`,
+    type: "burg" as const,
+    name: burg.name!,
+    group: burg.group!,
+    burgId: burg.i!,
+  };
+
+  // Render label
   labelGroup
     .append("text")
     .attr("text-rendering", "optimizeSpeed")
-    .attr("id", `burgLabel${burg.i}`)
+    .attr("id", labelData.i)
     .attr("data-id", burg.i!)
     .attr("x", burg.x)
     .attr("y", burg.y)
@@ -84,15 +87,7 @@ const drawBurgLabelRenderer = (burg: Burg): void => {
 
   // Update pack.labels
   if (!pack.labels) pack.labels = [];
-  const labelId = `burgLabel${burg.i}`;
-  const existingIndex = pack.labels.findIndex((l) => l.i === labelId);
-  const labelData = {
-    i: labelId,
-    type: "burg" as const,
-    name: burg.name!,
-    group: burg.group!,
-    burgId: burg.i!,
-  };
+  const existingIndex = pack.labels.findIndex((l) => l.i === labelData.i);
 
   if (existingIndex >= 0) {
     pack.labels[existingIndex] = labelData;

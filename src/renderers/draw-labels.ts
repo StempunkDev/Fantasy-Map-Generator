@@ -1,4 +1,5 @@
 import { curveNatural, line } from "d3";
+import type { Label } from "../modules/labels-generator";
 
 declare global {
   var drawLabels: () => void;
@@ -6,20 +7,7 @@ declare global {
   var removeLabel: (labelId: string) => void;
 }
 
-export interface Label {
-  i: string;
-  type: "burg" | "state" | "custom";
-  name: string;
-  group?: string;
-  points?: [number, number][];
-  pathData?: string;
-  startOffset?: number;
-  fontSize?: number;
-  letterSpacing?: number;
-  transform?: string;
-  burgId?: number;
-  stateId?: number;
-}
+export type { Label } from "../modules/labels-generator";
 
 // Main label renderer
 const labelsRenderer = (): void => {
@@ -58,7 +46,7 @@ const removeLabelRenderer = (labelId: string): void => {
 
 // Render burg label from label data
 function drawBurgLabelFromData(label: Label): void {
-  if (!label.burgId) return;
+  if (label.type !== "burg") return;
 
   const burg = pack.burgs[label.burgId];
   if (!burg || burg.removed) return;
@@ -85,7 +73,8 @@ function drawBurgLabelFromData(label: Label): void {
 
 // Render state label from label data
 function drawStateLabelFromData(label: Label): void {
-  if (!label.stateId || !label.points || label.points.length < 2) return;
+  if (label.type !== "state") return;
+  if (!label.points || label.points.length < 2) return;
 
   const state = pack.states[label.stateId];
   if (!state || state.removed) return;
@@ -134,7 +123,7 @@ function drawStateLabelFromData(label: Label): void {
     const top = (lines.length - 1) / -2;
     const spans = lines.map(
       (lineText, index) =>
-        `<tspan x="0" dy="${index ? 1 : top}em">${lineText}</tspan>`
+        `<tspan x="0" dy="${index ? 1 : top}em">${lineText}</tspan>`,
     );
     textPathElement.insertAdjacentHTML("afterbegin", spans.join(""));
   } else {
@@ -144,6 +133,7 @@ function drawStateLabelFromData(label: Label): void {
 
 // Render custom label from label data
 function drawCustomLabelFromData(label: Label): void {
+  if (label.type !== "custom") return;
   if (!label.points || label.points.length < 2) return;
 
   const group = label.group || "addedLabels";
@@ -193,7 +183,7 @@ function drawCustomLabelFromData(label: Label): void {
     const top = (lines.length - 1) / -2;
     const spans = lines.map(
       (lineText, index) =>
-        `<tspan x="0" dy="${index ? 1 : top}em">${lineText}</tspan>`
+        `<tspan x="0" dy="${index ? 1 : top}em">${lineText}</tspan>`,
     );
     textPathElement.insertAdjacentHTML("afterbegin", spans.join(""));
   } else {
