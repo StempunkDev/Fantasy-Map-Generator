@@ -2,8 +2,6 @@ declare global {
   var Labels: LabelsModule;
 }
 
-// --- Types ---
-
 export interface StateLabelData {
   i: number;
   type: "state";
@@ -41,8 +39,6 @@ export interface CustomLabelData {
 }
 
 export type LabelData = StateLabelData | BurgLabelData | CustomLabelData;
-
-// --- Implementation ---
 
 class LabelsModule {
   private getNextId(): number {
