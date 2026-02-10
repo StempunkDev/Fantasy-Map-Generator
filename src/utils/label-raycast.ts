@@ -7,7 +7,7 @@ export interface Ray {
   y: number;
 }
 
-export interface AngleData {
+interface AngleData {
   angle: number;
   dx: number;
   dy: number;
@@ -93,7 +93,7 @@ export function raycast({
  * Score a ray angle based on how horizontal it is.
  * Horizontal rays (0° or 180°) are preferred for label placement.
  */
-export function scoreRayAngle(angle: number): number {
+function scoreRayAngle(angle: number): number {
   const normalizedAngle = Math.abs(angle % 180); // [0, 180]
   const horizontality = Math.abs(normalizedAngle - 90) / 90; // [0, 1]
 
@@ -108,7 +108,7 @@ export function scoreRayAngle(angle: number): number {
 /**
  * Calculate the angle delta between two angles (0-180 degrees).
  */
-export function getAngleDelta(angle1: number, angle2: number): number {
+function getAngleDelta(angle1: number, angle2: number): number {
   let delta = Math.abs(angle1 - angle2) % 360;
   if (delta > 180) delta = 360 - delta; // [0, 180]
   return delta;
@@ -118,7 +118,7 @@ export function getAngleDelta(angle1: number, angle2: number): number {
  * Evaluate how similar the arc between two angles is.
  * Computes proximity of both angles towards the x-axis.
  */
-export function evaluateArc(angle1: number, angle2: number): number {
+function evaluateArc(angle1: number, angle2: number): number {
   const proximity1 = Math.abs((angle1 % 180) - 90);
   const proximity2 = Math.abs((angle2 % 180) - 90);
   return 1 - Math.abs(proximity1 - proximity2) / 90;
@@ -128,7 +128,7 @@ export function evaluateArc(angle1: number, angle2: number): number {
  * Score a ray pair based on the delta angle between them and their arc similarity.
  * Penalizes acute angles (<90°), favors straight lines (180°).
  */
-export function scoreCurvature(angle1: number, angle2: number): number {
+function scoreCurvature(angle1: number, angle2: number): number {
   const delta = getAngleDelta(angle1, angle2);
   const similarity = evaluateArc(angle1, angle2);
 
