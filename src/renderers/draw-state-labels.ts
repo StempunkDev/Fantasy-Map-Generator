@@ -1,27 +1,50 @@
 import { curveNatural, line, max, select } from "d3";
 import {
-  drawPath,
-  drawPoint,
   findClosestCell,
   minmax,
   rn,
   round,
   splitInTwo,
 } from "../utils";
+import type { StateLabelData } from "../modules/labels";
 import {
-  Ray,
   raycast,
   findBestRayPair,
-  ANGLES
+  ANGLES,
 } from "../utils/label-raycast";
 
 declare global {
   var drawStateLabels: (list?: number[]) => void;
 }
 
-type PathPoints = [number, number][];
+/**
+ * Helper function to calculate offset width for raycast based on state size
+ */
+function getOffsetWidth(cellsNumber: number): number {
+  if (cellsNumber < 40) return 0;
+  if (cellsNumber < 200) return 5;
+  return 10;
+}
 
-// list - an optional array of stateIds to regenerate
+function checkExampleLetterLength(): number {
+  const textGroup = select<SVGGElement, unknown>("g#labels > g#states");
+  const testLabel = textGroup
+    .append("text")
+    .attr("x", 0)
+    .attr("y", 0)
+    .text("Example");
+  const letterLength =
+    (testLabel.node() as SVGTextElement).getComputedTextLength() / 7; // approximate length of 1 letter
+  testLabel.remove();
+
+  return letterLength;
+}
+
+/**
+ * Render state labels from pack.labels data to SVG.
+ * Adjusts and fits labels based on layout constraints.
+ * list - optional array of stateIds to re-render
+ */
 const stateLabelsRenderer = (list?: number[]): void => {
   TIME && console.time("drawStateLabels");
 
@@ -29,28 +52,41 @@ const stateLabelsRenderer = (list?: number[]): void => {
   const layerDisplay = labels.style("display");
   labels.style("display", null);
 
-  const { cells, states } = pack;
-  const stateIds = cells.state;
+  const { states } = pack;
 
-  const labelPaths = getLabelPaths();
+  // Get labels to render
+  const labelsToRender = list
+    ? Labels.getAll()
+        .filter((l) => l.type === "state" && list.includes((l as StateLabelData).stateId))
+        .map((l) => l as StateLabelData)
+    : Labels.getByType("state").map((l) => l as StateLabelData);
+
   const letterLength = checkExampleLetterLength();
-  drawLabelPath(letterLength);
+  drawLabelPath(letterLength, labelsToRender);
 
   // restore labels visibility
   labels.style("display", layerDisplay);
 
-  function getLabelPaths(): [number, PathPoints][] {
-    const labelPaths: [number, PathPoints][] = [];
+  function drawLabelPath(letterLength: number, labelDataList: StateLabelData[]): void {
+    const mode = options.stateLabelsMode || "auto";
+    const lineGen = line<[number, number]>().curve(curveNatural);
 
-    for (const state of states) {
-      if (!state.i || state.removed || state.lock) continue;
-      if (list && !list.includes(state.i)) continue;
+    const textGroup = select<SVGGElement, unknown>("g#labels > g#states");
+    const pathGroup = select<SVGGElement, unknown>(
+      "defs > g#deftemp > g#textPaths",
+    );
 
+    for (const labelData of labelDataList) {
+      const state = states[labelData.stateId];
+      if (!state.i || state.removed)
+        throw new Error("State must not be neutral or removed");
+
+      // Calculate pathPoints using raycast algorithm (recalculated on each draw)
       const offset = getOffsetWidth(state.cells!);
       const maxLakeSize = state.cells! / 20;
       const [x0, y0] = state.pole!;
 
-      const rays: Ray[] = ANGLES.map(({ angle, dx, dy }) => {
+      const rays = ANGLES.map(({ angle, dx, dy }) => {
         const { length, x, y } = raycast({
           stateId: state.i,
           x0,
@@ -64,61 +100,20 @@ const stateLabelsRenderer = (list?: number[]): void => {
       });
       const [ray1, ray2] = findBestRayPair(rays);
 
-      const pathPoints: PathPoints = [
+      const pathPoints: [number, number][] = [
         [ray1.x, ray1.y],
         state.pole!,
         [ray2.x, ray2.y],
       ];
       if (ray1.x > ray2.x) pathPoints.reverse();
 
-      if (DEBUG.stateLabels) {
-        drawPoint(state.pole!, { color: "black", radius: 1 });
-        drawPath(pathPoints, { color: "black", width: 0.2 });
-      }
-
-      labelPaths.push([state.i, pathPoints]);
-    }
-
-    return labelPaths;
-  }
-
-  function checkExampleLetterLength(): number {
-    const textGroup = select<SVGGElement, unknown>("g#labels > g#states");
-    const testLabel = textGroup
-      .append("text")
-      .attr("x", 0)
-      .attr("y", 0)
-      .text("Example");
-    const letterLength =
-      (testLabel.node() as SVGTextElement).getComputedTextLength() / 7; // approximate length of 1 letter
-    testLabel.remove();
-
-    return letterLength;
-  }
-
-  function drawLabelPath(letterLength: number): void {
-    const mode = options.stateLabelsMode || "auto";
-    const lineGen = line<[number, number]>().curve(curveNatural);
-
-    const textGroup = select<SVGGElement, unknown>("g#labels > g#states");
-    const pathGroup = select<SVGGElement, unknown>(
-      "defs > g#deftemp > g#textPaths",
-    );
-
-    for (const [stateId, pathPoints] of labelPaths) {
-      const state = states[stateId];
-      if (!state.i || state.removed)
-        throw new Error("State must not be neutral or removed");
-      if (pathPoints.length < 2)
-        throw new Error("Label path must have at least 2 points");
-
-      textGroup.select(`#stateLabel${stateId}`).remove();
-      pathGroup.select(`#textPath_stateLabel${stateId}`).remove();
+      textGroup.select(`#stateLabel${labelData.stateId}`).remove();
+      pathGroup.select(`#textPath_stateLabel${labelData.stateId}`).remove();
 
       const textPath = pathGroup
         .append("path")
         .attr("d", round(lineGen(pathPoints) || ""))
-        .attr("id", `textPath_stateLabel${stateId}`);
+        .attr("id", `textPath_stateLabel${labelData.stateId}`);
 
       const pathLength =
         (textPath.node() as SVGPathElement).getTotalLength() / letterLength; // path length in letters
@@ -128,6 +123,9 @@ const stateLabelsRenderer = (list?: number[]): void => {
         state.fullName!,
         pathLength,
       );
+
+      // Update label data with font size
+      Labels.updateLabel(labelData.i, { fontSize: ratio });
 
       // prolongate path if it's too short
       const longestLineLength = max(lines.map((line) => line.length)) || 0;
@@ -149,7 +147,7 @@ const stateLabelsRenderer = (list?: number[]): void => {
       const textElement = textGroup
         .append("text")
         .attr("text-rendering", "optimizeSpeed")
-        .attr("id", `stateLabel${stateId}`)
+        .attr("id", `stateLabel${labelData.stateId}`)
         .append("textPath")
         .attr("startOffset", "50%")
         .attr("font-size", `${ratio}%`)
@@ -163,12 +161,16 @@ const stateLabelsRenderer = (list?: number[]): void => {
       textElement.insertAdjacentHTML("afterbegin", spans.join(""));
 
       const { width, height } = textElement.getBBox();
-      textElement.setAttribute("href", `#textPath_stateLabel${stateId}`);
+      textElement.setAttribute("href", `#textPath_stateLabel${labelData.stateId}`);
 
+      const stateIds = pack.cells.state;
       if (mode === "full" || lines.length === 1) continue;
 
       // check if label fits state boundaries. If no, replace it with short name
-      const [[x1, y1], [x2, y2]] = [pathPoints.at(0)!, pathPoints.at(-1)!];
+      const [[x1, y1], [x2, y2]] = [
+        pathPoints.at(0)!,
+        pathPoints.at(-1)!,
+      ];
       const angleRad = Math.atan2(y2 - y1, x2 - x1);
 
       const isInsideState = checkIfInsideState(
@@ -177,7 +179,7 @@ const stateLabelsRenderer = (list?: number[]): void => {
         width / 2,
         height / 2,
         stateIds,
-        stateId,
+        labelData.stateId,
       );
       if (isInsideState) continue;
 
@@ -187,6 +189,7 @@ const stateLabelsRenderer = (list?: number[]): void => {
           ? state.fullName!
           : state.name!;
       textElement.innerHTML = `<tspan x="0">${text}</tspan>`;
+      Labels.updateLabel(labelData.i, { text });
 
       const correctedRatio = minmax(
         rn((pathLength / text.length) * 50),
@@ -194,13 +197,8 @@ const stateLabelsRenderer = (list?: number[]): void => {
         130,
       );
       textElement.setAttribute("font-size", `${correctedRatio}%`);
+      Labels.updateLabel(labelData.i, { fontSize: correctedRatio });
     }
-  }
-
-  function getOffsetWidth(cellsNumber: number): number {
-    if (cellsNumber < 40) return 0;
-    if (cellsNumber < 200) return 5;
-    return 10;
   }
 
   function getLinesAndRatio(
