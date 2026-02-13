@@ -48,7 +48,7 @@ class LabelsModule {
     return existingIds[existingIds.length - 1] + 1;
   }
 
-  generate() : void {
+  generate(): void {
     this.clear();
     generateStateLabels();
     generateBurgLabels();
@@ -153,8 +153,7 @@ class LabelsModule {
  * @param list - Optional array of stateIds to regenerate only those
  */
 export function generateStateLabels(list?: number[]): void {
-  if (!TIME) console.time("generateStateLabels");
-  else TIME && console.time("generateStateLabels");
+  if (TIME) console.time("generateStateLabels");
 
   const { states } = pack;
   const labelsModule = window.Labels;
@@ -178,8 +177,7 @@ export function generateStateLabels(list?: number[]): void {
     });
   }
 
-  if (!TIME) console.timeEnd("generateStateLabels");
-  else TIME && console.timeEnd("generateStateLabels");
+  if (TIME) console.timeEnd("generateStateLabels");
 }
 
 /**
@@ -200,7 +198,7 @@ export function generateBurgLabels(): void {
     if (!burg.i || burg.removed) continue;
 
     const group = burg.group || "unmarked";
-    
+
     // Get label group offset attributes if they exist (will be set during rendering)
     // For now, use defaults - these will be updated during rendering phase
     const dx = 0;
