@@ -1,4 +1,4 @@
-import { drag, pointer, type Selection, select } from "d3";
+import { drag, type Selection, select } from "d3";
 import { Controllers } from "@/controllers";
 import type { Burg } from "../generators/burgs-generator";
 import { Labels } from "../generators/labels";
@@ -6,6 +6,7 @@ import {
   convertTemperature,
   destroyDialogIfExists,
   ensureEl,
+  getPointer,
   getTemperatureLikeness,
   parseTransform,
   rand,
@@ -13,7 +14,6 @@ import {
 } from "../utils";
 import type { PromptOptions } from "../utils/commonUtils";
 
-declare const showBurgTemperatureGraph: (id: string) => void;
 declare const prompt: (text: string, options: PromptOptions, callback: (value: string | number) => void) => void;
 
 let selected: Selection<any, any, any, any> | null = null;
@@ -436,7 +436,7 @@ function togglePort(burgId: number): void {
 
     burg.port = portFeatureId;
 
-    anchors
+    select("#anchors")
       .select(`#${burg.group}`)
       .append("use")
       .attr("href", "#icon-anchor")
@@ -602,7 +602,7 @@ function toggleRelocateBurg(): void {
 
 function relocateBurgOnClick(this: SVGGElement, event: any): void {
   const cells = pack.cells;
-  const point = pointer(event, this);
+  const point = getPointer(event, this);
   const cellId = findCell(point[0], point[1])!;
   const id = getSelectedId();
   const burg = pack.burgs[id];
@@ -628,10 +628,10 @@ function relocateBurgOnClick(this: SVGGElement, event: any): void {
   const y = rn(point[1], 2);
 
   const label = Labels.getBurgLabel(id);
-  burgIcons.select(`#burg${id}`).attr("x", x).attr("y", y);
-  if (label) burgLabels.select(`#burgLabel${label.i}`).attr("transform", null).attr("x", x).attr("y", y);
+  select("#burgIcons").select(`#burg${id}`).attr("x", x).attr("y", y);
+  if (label) select("#burgLabels").select(`#burgLabel${label.i}`).attr("transform", null).attr("x", x).attr("y", y);
 
-  const anchor = anchors.select(`use[data-id='${id}']`);
+  const anchor = select("#anchors").select(`use[data-id='${id}']`);
   if (anchor.size()) {
     const size = +anchor.attr("width");
     const xa = rn(x - size * 0.47, 2);
@@ -660,8 +660,8 @@ function editBurgLegend(): void {
 }
 
 function showTemperatureGraph(): void {
-  const id = selected!.attr("data-id");
-  showBurgTemperatureGraph(id);
+  const id = +selected!.attr("data-id");
+  void Controllers.TemperatureGraph.open(id);
 }
 
 function showProductionOverview(): void {

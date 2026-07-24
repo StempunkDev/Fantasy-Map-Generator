@@ -1,3 +1,4 @@
+import { select } from "d3";
 import { quadtree } from "d3-quadtree";
 import { removeBurgLabel } from "../renderers/draw-burg-labels";
 import { drawLabel } from "../renderers/draw-labels";
@@ -787,7 +788,7 @@ class BurgModule {
 
     if (burg.coa) {
       document.getElementById(`burgCOA${burgId}`)?.remove();
-      emblems.select(`#burgEmblems > use[data-i='${burgId}']`).remove();
+      select("#emblems").select(`#burgEmblems > use[data-i='${burgId}']`).remove();
       delete burg.coa;
     }
 

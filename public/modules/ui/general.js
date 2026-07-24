@@ -12,6 +12,16 @@ if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
   window.onbeforeunload = () => "Are you sure you want to navigate away?";
 }
 
+// Mobile Dialogs fix: touch-punch preventDefaults touch sequences that start on the dialog titlebar (drag handle),
+// so taps on its buttons never produce a click
+document.addEventListener(
+  "touchstart",
+  event => {
+    if (event.target.closest?.(".ui-dialog-titlebar-close, .ui-dialog-titlebar-collapse")) event.stopPropagation();
+  },
+  { capture: true, passive: true }
+);
+
 // Tooltips
 const tooltip = document.getElementById("tooltip");
 const onDataTipMove = debounce(showDataTip, 50);
@@ -181,6 +191,11 @@ function showMapTooltip(point, e, i, g) {
   if (group === "labels") return tip("Click to edit the Label");
 
   if (group === "markers") return tip("Click to edit the Marker. Hold Shift to not close the assosiated note");
+
+  if (group === "ruler") {
+    if (findEl("measurersEditor")) return tip("Drag the measurer or its points to edit");
+    return tip("Click to open the Measurers Editor");
+  }
 
   if (group === "markets") {
     const marketEl = e.target.closest("[data-id]");
@@ -557,18 +572,10 @@ function unlock(id) {
   el.className = "icon-lock-open";
 }
 
-// check if option is locked
-function locked(id) {
-  const lockEl = document.getElementById("lock_" + id);
-  return lockEl.dataset.locked === "1";
-}
-
-// return key value stored in localStorage or null
 function stored(key) {
   return localStorage.getItem(key) || null;
 }
 
-// store key value in localStorage
 function store(key, value) {
   return localStorage.setItem(key, value);
 }

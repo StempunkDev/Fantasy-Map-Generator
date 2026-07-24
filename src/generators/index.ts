@@ -17,6 +17,7 @@ import "./emblems";
 import "./ice-generator";
 import "./military-generator";
 import "./markers-generator";
+import "./measurers-generator";
 import "./goods-generator";
 import "./production-generator";
 import "./markets-generator";

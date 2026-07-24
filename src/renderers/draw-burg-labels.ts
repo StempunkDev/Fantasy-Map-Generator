@@ -1,3 +1,4 @@
+import { select } from "d3";
 import { type BurgLabel, Labels } from "@/generators/labels";
 
 // remove this section once layer.js is refactored--------------------------------
@@ -23,7 +24,7 @@ export function drawBurgLabelsRenderer(): void {
 
   // Render each group and update label offsets from SVG attributes
   for (const [groupName, labels] of burgLabelsByGroup) {
-    const labelGroup = burgLabels.select<SVGGElement>(`#${groupName}`);
+    const labelGroup = select("#burgLabels").select<SVGGElement>(`#${groupName}`);
     if (labelGroup.empty()) continue;
 
     const dxAttr = style.burgLabels?.[groupName]?.["data-dx"];
@@ -60,7 +61,7 @@ export function drawBurgLabelsRenderer(): void {
 
 export function drawBurgLabel(burgLabel: BurgLabel): void {
   // TODO: remove label group dependency - for now, if group is missing, redraw all labels to recreate the group
-  const labelGroup = burgLabels.select<SVGGElement>(`#${burgLabel.group}`);
+  const labelGroup = select("#burgLabels").select<SVGGElement>(`#${burgLabel.group}`);
   if (labelGroup.empty()) {
     drawBurgLabelsRenderer();
     return; // redraw all labels if group is missing
@@ -107,7 +108,7 @@ function createLabelGroups(): void {
   const defaultStyle = style.burgLabels.town || Object.values(style.burgLabels)[0] || {};
   const sortedGroups = [...options.burgs.groups].sort((a, b) => a.order - b.order);
   for (const { name } of sortedGroups) {
-    const group = burgLabels.append("g");
+    const group = select("#burgLabels").append("g");
     const styles = style.burgLabels[name] || defaultStyle;
     Object.entries(styles).forEach(([key, value]) => {
       group.attr(key, value);

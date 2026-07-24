@@ -1,11 +1,14 @@
-import { curveNatural, drag, line, pointer, select } from "d3";
+import { curveNatural, drag, line, select } from "d3";
 import { Controllers } from "@/controllers";
 import { type CustomLabel, isPathLabel, Labels, type StateLabel } from "../generators/labels";
 import { removeLabel as removeLabelElements } from "../renderers/draw-labels";
-import { destroyDialogIfExists, ensureEl, findEl, parseTransform, round } from "../utils";
+import { destroyDialogIfExists, ensureEl, findEl, getPointer, parseTransform, round } from "../utils";
 import { extractPathPoints } from "../utils/pathUtils";
 
 const lineGen = line<[number, number]>().curve(curveNatural);
+
+// group selected in the editor most recently; used as the default group for newly added labels
+let lastSelectedGroup = "";
 
 // find label data in the Labels data model for the selected SVG text element
 function getLabelData(): StateLabel | CustomLabel | undefined {
@@ -17,7 +20,7 @@ function getLabelData(): StateLabel | CustomLabel | undefined {
 
 function open(tspan: SVGTSpanElement): void {
   if (customization) return;
-  closeDialogs();
+  closeDialogs(".stable");
   if (!layerIsOn("toggleLabels")) toggleLabels();
 
   const textPath = tspan.parentNode as SVGTextPathElement;
@@ -203,6 +206,8 @@ function selectLabelGroup(text: SVGTextElement): void {
     return;
   }
 
+  lastSelectedGroup = group;
+
   hideGroupSection();
   const groupSelect = ensureEl<HTMLSelectElement>("labelGroupSelect");
   groupSelect.options.length = 0; // remove all options
@@ -282,7 +287,7 @@ function clickControlPoint(this: SVGCircleElement): void {
 }
 
 function addInterimControlPoint(this: SVGPathElement, event: any): void {
-  const point = pointer(event, this);
+  const point = getPointer(event, this);
 
   const dists: number[] = [];
   select("#controlPoints")
@@ -344,6 +349,7 @@ function hideGroupSection(): void {
 }
 
 function changeGroup(this: HTMLSelectElement): void {
+  lastSelectedGroup = this.value;
   ensureEl(this.value).appendChild(elSelected.node()!);
   const labelData = getLabelData();
   if (labelData) Labels.update(labelData, { group: this.value });
@@ -381,6 +387,8 @@ function createNewGroup(this: HTMLInputElement): void {
     tip("Group name should start with a letter", false, "error");
     return;
   }
+
+  lastSelectedGroup = group;
 
   // just rename if only 1 element left
   const oldGroup = elSelected.node()!.parentNode as SVGGElement;
@@ -605,4 +613,6 @@ function closeLabelEditor(): void {
   ensureEl("labelEditor").remove();
 }
 
-export const LabelsEditor = { open };
+const getLastSelectedGroup = (): string => lastSelectedGroup;
+
+export const LabelsEditor = { open, getLastSelectedGroup };

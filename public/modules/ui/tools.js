@@ -21,6 +21,7 @@ toolsContent.addEventListener("click", function (event) {
   else if (button === "editEmblemButton") openEmblemEditor();
   else if (button === "editNamesBaseButton") window.Controllers.NamesbaseEditor.open();
   else if (button === "editUnitsButton") window.Controllers.UnitsEditor.open();
+  else if (button === "editMeasurersButton") window.Controllers.MeasurersEditor.open();
   else if (button === "editNotesButton") window.Controllers.NotesEditor.open();
   else if (button === "editZonesButton") window.Controllers.ZonesEditor.open();
   else if (button === "overviewChartsButton") window.Controllers.ChartsOverview.open();
@@ -75,8 +76,8 @@ toolsContent.addEventListener("click", function (event) {
   else if (button === "addRoute") window.Controllers.RouteCreator.open();
   else if (button === "addMarker") toggleAddMarker();
   // click to create a new map buttons
-  else if (button === "openSubmapTool") openSubmapTool();
-  else if (button === "openTransformTool") openTransformTool();
+  else if (button === "openSubmapTool") window.Controllers.SubmapTool.open();
+  else if (button === "openTransformTool") window.Controllers.TransformTool.open();
 });
 
 function processFeatureRegeneration(event, button) {
@@ -673,8 +674,9 @@ function toggleAddLabel() {
   if (!layerIsOn("toggleLabels")) toggleLabels();
 }
 
-function addLabelOnClick() {
+async function addLabelOnClick() {
   const point = d3.mouse(this);
+  const shiftKey = d3.event.shiftKey;
 
   // get culture in clicked point to generate a name
   const cell = findCell(point[0], point[1]);
@@ -682,8 +684,8 @@ function addLabelOnClick() {
   const name = Names.getCulture(culture);
 
   // use most recently selected label group
-  const lastSelected = labelGroupSelect.value;
-  const groupId = ["", "states", "burgLabels"].includes(lastSelected) ? "addedLabels" :  lastSelected;
+  const lastSelected = await window.Controllers.LabelsEditor.getLastSelectedGroup();
+  const groupId = ["", "states", "burgLabels"].includes(lastSelected) ? "addedLabels" : lastSelected;
 
   const group = d3.select(ensureLabelGroup(groupId));
 
@@ -701,7 +703,7 @@ function addLabelOnClick() {
 
   drawCustomLabel(newLabel);
 
-  if (d3.event.shiftKey === false) unpressClickToAddButton();
+  if (shiftKey === false) unpressClickToAddButton();
 }
 
 async function toggleAddBurg() {

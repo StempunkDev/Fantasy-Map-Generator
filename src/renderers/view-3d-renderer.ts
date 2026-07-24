@@ -1,3 +1,4 @@
+import { select } from "d3";
 import type * as THREE from "three";
 import { Labels } from "@/generators/labels";
 import { Services } from "@/services";
@@ -435,7 +436,7 @@ async function createLabels() {
   raycaster = new Three.Raycaster();
   raycaster.set(new Three.Vector3(0, 1000, 0), new Three.Vector3(0, -1, 0));
 
-  const states = viewbox.select("#labels #states");
+  const states = select("#viewbox").select("#labels #states");
 
   const stateOptions = {
     font: states.attr("font-family"),
@@ -454,7 +455,7 @@ async function createLabels() {
   function getBurgLabelOptions(burg: any) {
     if (!burg.group) return null;
 
-    const labelGroup = burgLabels.select(`#${burg.group}`);
+    const labelGroup = select("#burgLabels").select(`#${burg.group}`);
     if (labelGroup.empty()) return null;
 
     const font = labelGroup.attr("font-family") || "Arial";

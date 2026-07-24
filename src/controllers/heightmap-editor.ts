@@ -1,5 +1,6 @@
-import { drag, easeSinInOut, hsl, interpolateRound, lab, leastIndex, max, mean, pointer, range, select } from "d3";
+import { drag, easeSinInOut, hsl, interpolateRound, lab, leastIndex, max, mean, range, select } from "d3";
 import { Controllers } from "@/controllers";
+import { heightmapTemplates } from "@/data/heightmap-templates";
 import { Labels } from "@/generators/labels";
 import {
   destroyDialogIfExists,
@@ -9,6 +10,7 @@ import {
   findGridCell,
   generateSeed,
   getGridPolygon,
+  getPointer,
   last,
   lim,
   link,
@@ -385,7 +387,7 @@ function enterHeightmapEditMode(mode: string, tool?: string): void {
 }
 
 function moveCursor(this: SVGElement, event: any): void {
-  const [x, y] = pointer(event, this);
+  const [x, y] = getPointer(event, this);
   const cell = findGridCell(x, y, grid);
   ensureEl("heightmapInfoX").innerHTML = String(rn(x));
   ensureEl("heightmapInfoY").innerHTML = String(rn(y));
@@ -398,7 +400,7 @@ function moveCursor(this: SVGElement, event: any): void {
   if (!pressed) return;
 
   if (pressed.id === "brushLine") {
-    debug.select("line").attr("x2", x).attr("y2", y);
+    select("#debug").select("line").attr("x2", x).attr("y2", y);
     return;
   }
 
@@ -470,9 +472,9 @@ function finalizeHeightmap(): void {
       const wasOn = storedLayers.includes(e.id);
       if ((wasOn && !layerIsOn(e.id)) || (!wasOn && layerIsOn(e.id))) e.click();
     });
-  if (!layerIsOn("toggleBorders")) borders.selectAll("path").remove();
-  if (!layerIsOn("toggleStates")) regions.selectAll("path").remove();
-  if (!layerIsOn("toggleRivers")) rivers.selectAll("*").remove();
+  if (!layerIsOn("toggleBorders")) select("#borders").selectAll("path").remove();
+  if (!layerIsOn("toggleStates")) select("#regions").selectAll("path").remove();
+  if (!layerIsOn("toggleRivers")) select("#rivers").selectAll("*").remove();
 
   getCurrentPreset();
 }
@@ -765,7 +767,7 @@ function restoreRiskedData(): void {
 
   // recalculate ice
   Ice.generate();
-  ice.selectAll("*").remove();
+  select("#ice").selectAll("*").remove();
 
   TIME && console.timeEnd("restoreRiskedData");
   INFO && console.groupEnd();
@@ -1064,9 +1066,8 @@ function exitBrushMode(): void {
   const pressed = document.querySelector("#brushesButtons > button.pressed");
   if (pressed) pressed.classList.remove("pressed");
 
-  // use the legacy v5 viewbox selection: clicked relies on d3.event, which d3 v7 never sets
-  viewbox.style("cursor", "default").on(".drag", null).on("click", clicked);
-  debug.selectAll(".lineCircle").remove();
+  select<SVGElement, unknown>("#viewbox").style("cursor", "default").on(".drag", null).on("click", clicked);
+  select("#debug").selectAll(".lineCircle").remove();
   removeCircle();
 
   ensureEl("brushesSliders").style.display = "none";
@@ -1102,15 +1103,15 @@ function toggleBrushMode(event: Event): void {
 }
 
 function placeLinearFeature(this: SVGElement, event: any): void {
-  const [x, y] = pointer(event, this);
+  const [x, y] = getPointer(event, this);
   const toCell = findGridCell(x, y, grid);
 
-  const lineCircle = debug.selectAll(".lineCircle");
+  const lineCircle = select("#debug").selectAll(".lineCircle");
   if (!lineCircle.size()) {
     // first click: add 1st control point
-    debug.append("line").attr("id", "brushCircle").attr("x1", x).attr("y1", y).attr("x2", x).attr("y2", y);
+    select("#debug").append("line").attr("id", "brushCircle").attr("x1", x).attr("y1", y).attr("x2", x).attr("y2", y);
 
-    debug
+    select("#debug")
       .append("circle")
       .attr("data-cell", toCell)
       .attr("class", "lineCircle")
@@ -1125,7 +1126,7 @@ function placeLinearFeature(this: SVGElement, event: any): void {
 
   // second click: execute operation and remove control points
   const fromCell = +lineCircle.attr("data-cell");
-  debug.selectAll("*").remove();
+  select("#debug").selectAll("*").remove();
 
   const power = ensureEl<HTMLInputElement>("heightmapLinePower").valueAsNumber;
   if (power === 0) {
@@ -1160,7 +1161,7 @@ function placeLinearFeature(this: SVGElement, event: any): void {
 }
 
 function applyFillBrush(this: SVGElement, event: any): void {
-  const [x, y] = pointer(event, this);
+  const [x, y] = getPointer(event, this);
   const start = findGridCell(x, y, grid);
   const startHeight = grid.cells.h[start];
   const isWaterFill = startHeight < 20;
@@ -1272,9 +1273,11 @@ function applyConeToSelection(selection: number[], isWaterFill: boolean, targetH
 
 function dragBrush(this: SVGElement, event: any): void {
   const r = ensureEl<HTMLInputElement>("heightmapBrushRadius").valueAsNumber;
+  const [startX, startY] = getPointer(event, this);
+  const start = findGridCell(startX, startY, grid); // fixed once per drag: Align replicates this cell's height
 
   const applyBrush = (pointerEvent: any) => {
-    const p = pointer(pointerEvent, this);
+    const p = getPointer(pointerEvent, this);
     moveCircle(p[0], p[1], r);
 
     const inRadius = findGridAll(p[0], p[1], r, grid);
@@ -1282,7 +1285,7 @@ function dragBrush(this: SVGElement, event: any): void {
     const cellTypeFilter = ensureEl<HTMLSelectElement>("cellTypeFilter").value;
     if (cellTypeFilter === "land") selection = inRadius.filter((i: number) => grid.cells.h[i] >= 20);
     else if (cellTypeFilter === "water") selection = inRadius.filter((i: number) => grid.cells.h[i] < 20);
-    if (selection?.length) changeHeightForSelection(selection, findGridCell(p[0], p[1], grid));
+    if (selection?.length) changeHeightForSelection(selection, start);
   };
 
   applyBrush(event); // apply once on start so a plain click changes height

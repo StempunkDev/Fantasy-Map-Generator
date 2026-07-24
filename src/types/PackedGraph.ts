@@ -6,6 +6,7 @@ import type { Ice } from "@/generators/ice-generator";
 import type { LabelData } from "@/generators/labels";
 import type { Marker } from "@/generators/markers-generator";
 import type { Deal, Market } from "@/generators/markets-generator";
+import type { Measurer } from "@/generators/measurers-generator";
 import type { Province } from "@/generators/provinces-generator";
 import type { Religion } from "@/generators/religions-generator";
 import type { River } from "@/generators/river-generator";
@@ -66,5 +67,6 @@ export interface PackedGraph {
   goods: Good[];
   markets: Market[];
   deals: Deal[];
+  measurers: Measurer[];
   labels: LabelData[];
 }
