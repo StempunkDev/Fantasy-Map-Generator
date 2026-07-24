@@ -1220,8 +1220,31 @@ export function resolveVersionConflicts(mapVersion: string, data: string[]): voi
     options.threeD = { ...defaultOptions };
   }
 
-  if (isOlderThan("1.133.0")) {
-    // v1.133.0 moved labels data from SVG to data model
+  if (isOlderThan("1.138.0")) {
+    // v1.138.0 migrated measurers from the global rulers string (data[33]) to pack.measurers
+    const MEASURER_TYPES = ["Ruler", "Opisometer", "RouteOpisometer", "Planimeter"];
+    const isMeasurerType = (type: string): type is MeasurerType => MEASURER_TYPES.includes(type);
+
+    const parse = (serialized: string): Measurer[] => {
+      const measurers: Measurer[] = [];
+      for (const measurerString of serialized.split("; ")) {
+        const [type, pointsString] = measurerString.split(": ");
+        if (!type || !pointsString || !isMeasurerType(type)) continue;
+
+        const points = pointsString.split(" ").map(pair => {
+          const [x, y] = pair.split(",");
+          return [+x, +y] as Point;
+        });
+        measurers.push({ type, points });
+      }
+      return measurers;
+    };
+
+    if (data[33]) pack.measurers = parse(data[33]);
+  }
+
+  if (isOlderThan("1.139.0")) {
+    // v1.139.0 moved labels data from SVG to data model
     // Migrate old SVG labels to pack.labels structure
     if (!pack.labels?.length) {
       Labels.clear();
@@ -1379,28 +1402,5 @@ export function resolveVersionConflicts(mapVersion: string, data: string[]): voi
         drawCustomLabels();
       }
     }
-  }
-
-  if (isOlderThan("1.138.0")) {
-    // v1.138.0 migrated measurers from the global rulers string (data[33]) to pack.measurers
-    const MEASURER_TYPES = ["Ruler", "Opisometer", "RouteOpisometer", "Planimeter"];
-    const isMeasurerType = (type: string): type is MeasurerType => MEASURER_TYPES.includes(type);
-
-    const parse = (serialized: string): Measurer[] => {
-      const measurers: Measurer[] = [];
-      for (const measurerString of serialized.split("; ")) {
-        const [type, pointsString] = measurerString.split(": ");
-        if (!type || !pointsString || !isMeasurerType(type)) continue;
-
-        const points = pointsString.split(" ").map(pair => {
-          const [x, y] = pair.split(",");
-          return [+x, +y] as Point;
-        });
-        measurers.push({ type, points });
-      }
-      return measurers;
-    };
-
-    if (data[33]) pack.measurers = parse(data[33]);
   }
 }
