@@ -148,6 +148,12 @@ generator, controllers and renderer; it does not move them.
   None of those is foreclosed; none is needed to fix the save array.
 - **Attached modules are first-class.** Military and Labels keep their data on the entity that owns
   it. A module without `data` is complete, not half-migrated.
+- **Possible future: modules own their data.** Today a module serializes a slice of the shared `pack`;
+  the slice could instead live on the module itself, with other features reading it through the
+  module rather than through `pack`. That would remove cross-feature reads of shared globals — the
+  one PoC benefit this proposal leaves on the table. It is deliberately not decided here: it touches
+  every generator and changes how the pipeline passes state, so it needs its own proposal and a
+  careful weighing once the descriptor has proven itself.
 - **The legacy shim is the riskiest piece** because it is one all-fields translation rather than
   thirty small changes. It should ship, and be tested against real old `.map` files, before the
   positional reader is deleted.
