@@ -147,7 +147,11 @@ generator, controllers and renderer; it does not move them.
   closed package interface, immutable per-step map state, interchangeable generators and parallelism.
   None of those is foreclosed; none is needed to fix the save array.
 - **Attached modules are first-class.** Military and Labels keep their data on the entity that owns
-  it. A module without `data` is complete, not half-migrated.
+  it. A module without `data` is complete, not half-migrated. For Military this is a choice, not a
+  constraint: regiments sit on `state.military` today, but they could be split off into their own
+  `data.military` key, keyed by state, and the module would then gain a `data` entry. That decision
+  is left to the pilot; the pattern supports both, and the pilot is more useful if it keeps the
+  attached shape until a reason to split appears.
 - **Possible future: modules own their data.** Today a module serializes a slice of the shared `pack`;
   the slice could instead live on the module itself, with other features reading it through the
   module rather than through `pack`. That would remove cross-feature reads of shared globals — the
