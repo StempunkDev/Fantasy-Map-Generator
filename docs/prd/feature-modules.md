@@ -9,7 +9,11 @@ prefix (`military-generator.ts`, `military-overview.ts`, `draw-military.ts`) and
 entries in four unrelated places:
 
 - **`src/generators/generation-pipeline.ts`** — the pipeline step id, at the correct phase, in both
-  `GenerationPipeline` and (if it runs after `regraph`) `ErasePipeline`.
+  `GenerationPipeline` and (if it runs after `regraph`) `ErasePipeline` — today two separately
+  hand-written arrays (38 and 32 entries), roughly 31 of whose `run` closures are byte-for-byte copies
+  of the generation entry, with nothing enforcing that a new step gets added to both. The migration
+  guide in `docs/architecture/generation-pipeline.md` names the resulting bug directly: forgetting the
+  second entry silently drops that feature from any map that goes through the heightmap editor.
 - **`src/components/layers.ts`** — the layer id, its `draw`/`erase`, its position in z-order.
 - **`src/controllers/index.ts`** — one `Controllers` entry per dialog the feature owns (Military
   alone needs three: `MilitaryOverview`, `RegimentsOverview`, `RegimentEditor`).
@@ -46,9 +50,10 @@ no relationship to the feature's own files, exactly as `save.ts`'s array does fo
 
 ## Solution
 
-Give every feature a **feature module**: one small descriptor object that names the pieces already
-implementing that feature (its pipeline step ids, its `Controllers` keys, its `Layers` id) and, for
-each of the three serializable buckets an FMG feature can have, its slice of that bucket:
+Give every feature a **feature module**: one file that *owns* the pieces that already implement that
+feature — its pipeline step `run`/`erase` implementations, its `Controllers` dialogs, its layer's
+`draw`/`erase` — and, for each of the three serializable buckets an FMG feature can have, its slice of
+that bucket:
 
 - **world data** — `data.<id>` in the future `.map` format (`docs/architecture/future-data-model.md`)
 - **map config** — `options.map.<id>`, and **generation config** — `options.generation.<id>`
@@ -60,76 +65,128 @@ A single ordered list, `src/modules/index.ts`, holds one descriptor per feature.
 
 This is deliberately **not** a fourth execution mechanism sitting next to the pipeline runner, the
 layers registry and the `Controllers` registry — nor a second options object or a second style
-object next to the single ones `configuration.md` and the style migration already specify. Those five
-things (pipeline, layers, controllers, options, style) already do their one job well, and
-re-implementing any of them inside a module system would create exactly the two-sources-of-truth
-problem this codebase already avoids elsewhere. What changes is **authorship**, not mechanism: today
-`mapSchema` and `stylesSchema` are each one literal object with one field per feature, typed with no
-link back to the feature that owns it. A feature module's `mapConfig`/`generationConfig`/`style`
-entries are what compose those single objects, in place of a hand-typed field — `optionsSchema` and
-`stylesSchema` become `mergeSchemas(residual, ...Modules.all.map(m => m.mapConfig?.schema))` and the
-equivalent for style, rather than a literal with every feature inlined. Validation, "replace not
-merge," and the requests-vs-map distinction stay exactly the rules `configuration.md` already states —
-only where a field's shape and default are *declared* moves.
+object next to the single ones `configuration.md` and the style migration already specify. `Pipeline`,
+`LayersRegistry` and `createRegistry` stay exactly the classes they are today; what changes is where
+the *content* fed into them comes from. Six places in the codebase each hand-weld, per feature, an
+**order** (or a key) directly to an **implementation**, in the same literal:
+
+| Place | order/key | implementation, today welded to it |
+|---|---|---|
+| `generationPipelineSteps` / `erasePipelineSteps` | sequence position | the step's `run`/`erase` closure |
+| `mapLayers` | z-order position | the layer's `draw`/`erase` |
+| `Controllers` | dialog name (no order) | the lazy `import()` |
+| `save.ts` / `load.ts` | array index | the read/write |
+| `mapSchema` / `optionsSchema.generation` | field name (no order) | the zod shape |
+| `stylesSchema` | field name (no order) | the zod shape |
+
+A feature module splits each pair in two. **Order** (where one exists) stays exactly where it is
+today — a small, hand-authored, centrally-reviewed list of ids, because sequence and z-order are real
+cross-feature facts nothing about a per-feature file can express (States needs four non-adjacent
+pipeline phases; z-order has no relationship to generation order at all). **Implementation** moves into
+the module, and each of the six places is rewritten once, from a hand-typed literal into a lookup
+against `Modules.all` plus a small residual for pieces no feature owns:
+
+```ts
+const generationPipelineSteps = stepOrder.map(id => ({ id, run: resolve(id).run }));
+const erasePipelineSteps = stepOrder
+  .filter(id => resolve(id).erase !== false)
+  .map(id => ({ id, run: (s => (s.erase ? s.erase : s.run))(resolve(id)) }));
+
+const mapLayers = layerOrder.map(id => new Layer(resolveLayer(id)));
+
+const Controllers = createRegistry({
+  ...residualControllers,
+  ...Object.fromEntries(Modules.all.flatMap(m => Object.entries(m.controllers ?? {})))
+});
+```
+
+`resolve`/`resolveLayer` check the module registry first, then a small hand-authored residual for
+ids no feature owns (see below), and throw if neither has the id — completeness is enforced by the
+pipeline/layer list failing to build, not by a separate test catching drift after the fact. This is
+the exact same composition already proposed for the other four places: `save.ts` iterates
+`Modules.all` and calls `serialize()`; `mapSchema` spreads `m.mapConfig.schema` behind a shrinking
+residual. Nothing here is a new idea — it is the same pattern, applied to the two places (pipeline,
+layers) where a duplicated-implementation problem is already documented, plus the one place
+(`Controllers`) that has no order to hand-declare at all.
+
+Deriving `erasePipelineSteps` this way is also the concrete fix for the fragility named in the Problem
+Statement: a step's erase behavior (same closure, a different one, or `false` to sit out the erase
+pipeline entirely — matching today's `grid`/`heightmap`/`mapSize`/`clearPack`/`defaultRuler`/
+`addedLabels`/`journeys` exclusions) is declared once, next to `run`, in the module that owns the step.
+There is no second array to forget.
+
+A step, layer, or dialog with no owning feature — topology and chrome: `grid`, `heightmap`, `ocean`,
+`coastline`, `compass`, `debug`, `scaleBar`, `vignette`, `legend`, generic dialogs like `ColorPicker`
+and `IconSelector` — keeps its implementation declared directly beside the order list, in the same
+small residual object the schemas already use. This is the same "not every foundational thing is a
+feature" call already made for topology data below; it is not decided wholesale in this document,
+each id's owner is decided when that id's feature (or lack of one) migrates.
 
 What a feature module adds, concretely:
 
 1. **A discoverable inventory.** `Modules.all` lists every feature and what it consists of — the
    answer to "what is Military" (three controllers, a layer, no data key, a config key, a style key)
-   becomes one file, not a grep across four.
-2. **Ownership of the feature's own serializable state.** `serialize()`/`deserialize(slice)` replace
-   the feature's `save.ts` line and `load.ts` line; a `mapConfig`/`generationConfig`/`style` entry
-   replaces its hand-typed field in `options-schema.ts` / `styles-schema.ts`. `Save`/`Load`,
-   `Options` and `Styles` no longer know individual feature shapes — they compose from `Modules.all`.
-3. **A wiring-consistency check**, free from (1): a test asserts every id in `pipelineStepIds`, every
-   entry in `controllers`, and `layerId` a module references exists in its real registry, and every
-   `mapConfig` / `generationConfig` / `style` key it declares exists, once composed, in the single
-   options/style object — catching drift that today only breaks at runtime or gets caught by manual
-   review.
+   becomes one file, not a grep across six.
+2. **Ownership of the feature's own execution and serializable state.** `pipelineSteps` entries
+   replace its `run`/`erase` closures in `generation-pipeline.ts`; `layer` replaces its `Layer(...)`
+   entry in `layers.ts`; `controllers` replaces its entries in `controllers/index.ts`;
+   `serialize()`/`deserialize(slice)` replace its `save.ts` line and `load.ts` line; a
+   `mapConfig`/`generationConfig`/`style` entry replaces its hand-typed field in
+   `options-schema.ts`/`styles-schema.ts`. None of the six places above knows an individual feature's
+   shape or behavior anymore — each composes from `Modules.all` plus its own shrinking residual.
+3. **A completeness guarantee, free from (1) and (2).** `resolve`/`resolveLayer` throw at composition
+   time (app startup, and in every test that constructs the pipeline or the layer list) if an order
+   list names an id nothing owns; a registry test additionally asserts every module's `mapConfig`/
+   `generationConfig`/`style` key is present, under that module's `id`, in the composed schema, and
+   that `Controllers` has no duplicate key across modules and residual. Drift that today only breaks
+   at runtime — or gets caught by manual review, the way the erase-pipeline fragility does now — becomes
+   a thrown error or a failing test instead.
 
-Because a module's pipeline step ids, `Controllers` keys and `Layers` id already live in their own
-files, a module **references** them without moving anything. Config and style are the one place this proposal
-does move code: a feature's `mapSchema`/`stylesSchema` field is presently declared *inside* the
-monolith, not beside the feature, so adopting the pattern for a feature means relocating that one
-field out of `options-schema.ts`/`styles-schema.ts` into the feature's module file — a small,
-mechanical, single-feature move, not a rewrite of either schema. `src/generators/`,
-`src/controllers/`, `src/renderers/` keep their current, already-documented, folder-by-role layout
-(`docs/architecture/architecture.md`'s Project Structure table is unchanged); writing
-`src/modules/military.ts`, deleting the feature's `save.ts`/`load.ts` lines and relocating its two
-schema fields is a self-contained, revertible change per feature — which is what makes gradual,
-one-feature-at-a-time migration possible instead of a single big-bang cutover.
+`src/generators/`, `src/controllers/`, `src/renderers/` keep their current, already-documented,
+folder-by-role layout (`docs/architecture/architecture.md`'s Project Structure table is unchanged) —
+a module *references* those files' exports (imports `Military.generate`, `drawMilitary`,
+`MilitaryOverview`), it does not relocate them. Only the six order-plus-implementation sites above
+change: writing `src/modules/military.ts` and deleting its four now-redundant entries
+(`generation-pipeline.ts`, `layers.ts`, `controllers/index.ts`, the two schemas) is a self-contained,
+revertible change per feature — which is what makes gradual, one-feature-at-a-time migration possible
+instead of a single big-bang cutover.
 
-The three buckets are independent per module — a module may own any subset of
-`{data, generationConfig, mapConfig, style}`, never forced to invent one it doesn't need. Not every
-feature owns a dedicated data key: regiments live on `state.military`, not at their own `data.*` path,
-and Labels are distributed across `state.label`, `burg.label`, `province.label` and
-`pack.addedLabels`. Military is the clean example that the buckets don't travel together: it has
-**no** `data` key (regiments are serialized as part of the States module) but **does** own
-`options.map.military` (unit type definitions, `options-schema.ts:139`) and `style.military`
-(`styles-schema.ts:207`) outright. A module with no data of its own is an **attached module** for
-that bucket — contributing controllers and a layer, IO for the entity it lives on left to whichever
-module owns that entity. This is stated up front because it is the first thing that breaks a naive
-"one module, one key everywhere" design.
+Every entry on a module — `data`, `pipelineSteps`, `layer`, `controllers`, `mapConfig`,
+`generationConfig`, `style` — is independent: a module may own any subset, never forced to invent one
+it doesn't need. Not every feature
+owns a dedicated data key: regiments live on `state.military`, not at their own `data.*` path, and
+Labels are distributed across `state.label`, `burg.label`, `province.label` and `pack.addedLabels`.
+Military is the clean example that the buckets don't travel together: it has **no** `data` key
+(regiments are serialized as part of the States module) but **does** own its pipeline step, its layer
+(`draw: drawMilitary`), three controllers, `options.map.military` (unit type definitions,
+`options-schema.ts:139`) and `style.military` (`styles-schema.ts:207`) outright. A module with no data
+of its own is an **attached module** for that bucket — it can still fully own its pipeline step, layer
+and controllers, with IO for the entity it lives on left to whichever module owns that entity. This is
+stated up front because it is the first thing that breaks a naive "one module, one key everywhere"
+design.
 
 ## User Stories
 
-1. As a contributor adding a feature, I want one file that declares its pipeline step, controllers,
-   layer and save/load, so that I don't have to remember to touch four unrelated files.
+1. As a contributor adding a feature, I want one file that owns its pipeline step, controllers, layer
+   and save/load implementations, so that I don't have to remember to touch six unrelated files, and a
+   forgotten file is a thrown error, not a silently missing feature.
 2. As a contributor reading the codebase, I want `Modules.all` to list every feature with what it
    owns, so that "what is the Military feature" is answered by one file, not a grep.
-3. As a contributor, I want a feature module to reference existing files rather than require moving
-   them, so that adopting the pattern for an old feature is a small, independent, revertible change.
+3. As a contributor, I want a feature module to reference the feature's existing generator/controller/
+   renderer files (import their exports) rather than require moving them, so that adopting the pattern
+   for an old feature is a small, independent, revertible change even though the module now owns *where
+   that implementation is wired in*.
 4. As a maintainer, I want `Save`/`Load` to iterate a module list instead of a hand-maintained
    positional array, so that adding a field never means picking the next free numeric index.
 5. As a maintainer, I want removing or renaming a feature's data to be a change in one file, so that
    `save.ts`'s permanent placeholder comments (`data[23]`, `data[28]`, `data[33]`, `data[45]`) stop
    accumulating.
-6. As a maintainer, I want a test that fails when a module references a pipeline step, controller or
-   layer id that no longer exists, so that renames and removals are caught at test time, not by a
-   user's broken save file.
-7. As a contributor, I want an "attached module" (owns controllers/layer, no data key of its own) to
-   be a first-class, unsurprising case, so that features like Military and Labels don't force an
-   artificial data key into existence just to fit the pattern.
+6. As a maintainer, I want the generation pipeline and the layer list to fail to build — loudly, at
+   startup — when their order list names an id no module or residual owns, so that a rename or removal
+   is caught before a user ever sees a silently missing feature, not by manual review of a diff.
+7. As a contributor, I want an "attached module" (owns pipeline step/controllers/layer, no data key of
+   its own) to be a first-class, unsurprising case, so that features like Military and Labels don't
+   force an artificial data key into existence just to fit the pattern.
 8. As a maintainer, I want each module's `serialize`/`deserialize` tested for round-trip like any
    other IO code, so that a feature's save format has the same test discipline `docs/architecture/architecture.md`
    already asks of IO modules generally.
@@ -175,7 +232,16 @@ module owns that entity. This is stated up front because it is the first thing t
     that IO ownership doesn't become a new place for hidden coupling.
 22. As a maintainer, I want the module list itself to be the only new registry, not a parallel
     pipeline or layer ordering, so that generation order and z-order keep their single source of
-    truth in `generation-pipeline.ts` and `layers.ts` respectively.
+    truth as a plain, hand-authored id list in `generation-pipeline.ts` and `layers.ts` respectively —
+    modules supply implementation, never sequence.
+23. As a maintainer, I want a feature's erase-pipeline behavior (same closure as generation, a
+    different one, or explicitly excluded) declared once, next to its `run`, so that
+    `erasePipelineSteps` is derived instead of hand-duplicated, and the documented "forgot to add it to
+    the erase array" bug stops being possible for any module-owned step.
+24. As a maintainer, I want the `Controllers` registry composed from module-contributed dialogs plus a
+    residual of dialogs no feature owns (`ColorPicker`, `IconSelector`, `HelpAssistant`, …), so that a
+    feature's dialogs are declared where the feature is, and a duplicate dialog name across modules is
+    a failing test instead of one import silently shadowing another.
 
 ## Implementation Decisions
 
@@ -196,12 +262,12 @@ module owns that entity. This is stated up front because it is the first thing t
 
 - **Descriptor shape** (illustrative — not the final type, which belongs in the implementation PR).
   `id` is the key in `data.<id>` / `options.map.<id>` / `options.generation.<id>` / `style.<id>`, for
-  whichever of those buckets a module owns; purely descriptive for the rest. `pipelineStepIds` is
-  plural on purpose: a module can own more than one, non-adjacent, phase of generation — States is the
+  whichever of those buckets a module owns; purely descriptive for the rest. `pipelineSteps` is plural
+  on purpose: a module can own more than one, non-adjacent, phase of generation — States is the
   clearest real case, with `states`, `stateStatistics`, `stateForms` and `taxes` as four separate ids,
-  Routes, Religions, Provinces, Markets and Production running steps *between* them. A module claims
-  membership in those ids, never their order — the sequence stays exactly where
-  `generation-pipeline.ts` already keeps it, unchanged by this proposal.
+  Routes, Religions, Provinces, Markets and Production running steps *between* them. A module owns each
+  step's `run`, never its position — sequence stays exactly where `generation-pipeline.ts`'s
+  `stepOrder` already keeps it, unchanged by this proposal.
 
   ```ts
   interface SchemaSlice {
@@ -209,12 +275,18 @@ module owns that entity. This is stated up front because it is the first thing t
     defaults: unknown;
   }
 
+  interface FeaturePipelineStep {
+    id: PipelineStepId;
+    run: (ctx: GenerationContext) => unknown;
+    erase?: false | ((ctx: EraseContext) => unknown); // false: sits out Erase Heightmap entirely
+  }
+
   interface FeatureModule<Id extends string = string> {
     id: Id;
 
-    pipelineStepIds?: PipelineStepId[]; // cross-referenced against generation-pipeline.ts, not re-declared
-    controllers?: (keyof typeof Controllers)[]; // cross-referenced against controllers/index.ts
-    layerId?: LayerId; // cross-referenced against layers.ts
+    pipelineSteps?: FeaturePipelineStep[]; // implementation only; stepOrder in generation-pipeline.ts keeps the sequence
+    controllers?: Record<string, () => Promise<unknown>>; // merged into the Controllers registry
+    layer?: LayerParams; // merged into mapLayers at layerOrder's position for layer.id (from layers.ts)
 
     data?: { serialize(): unknown; deserialize(slice: unknown): void };
     mapConfig?: SchemaSlice; // -> options.map.<id>
@@ -223,14 +295,18 @@ module owns that entity. This is stated up front because it is the first thing t
   }
   ```
 
-  `SchemaSlice` is shared by the three config/style buckets because they're structurally identical — a
-  typed shape plus its default value — and differ only in which single object they compose into; the
-  field *name* carries that meaning, not the type. Each of `data`/`mapConfig`/`generationConfig`/
-  `style` is independently optional. A module with no `data` entry is attached for that bucket: it
-  documents and cross-checks its controllers/layer/pipeline steps but leaves world-data IO to whichever
-  module owns the entity its data lives on. `id` still exists on every module (for the inventory and
-  for tests) even when it names no `data.*` key — Military is `id: "military"` with `mapConfig`/`style`
-  entries and no `data` entry at all.
+  `SchemaSlice` is shared by the config/style buckets because they're structurally identical — a typed
+  shape plus its default value — and differ only in which single object they compose into; the field
+  *name* carries that meaning, not the type. `layer` reuses `LayerParams` as already defined in
+  `layers.ts` (its own `id`, which need not equal the module's `id` — Measurers' module `id` is
+  `"measurers"`, its layer and style key stay the legacy `"rulers"`, and nothing about that mismatch is
+  new work this proposal introduces). Each of `data`/`pipelineSteps`/`controllers`/`layer`/`mapConfig`/
+  `generationConfig`/`style` is independently optional. A module with no `data` entry is attached for
+  that bucket: it can still fully own its pipeline step(s), controllers and layer, leaving only
+  world-data IO to whichever module owns the entity its data lives on. `id` still exists on every
+  module (for the inventory and for tests) even when it names no `data.*` key — Military is
+  `id: "military"` with `pipelineSteps`/`controllers`/`layer`/`mapConfig`/`style` entries and no `data`
+  entry at all.
 
 - **`Save`/`Load` become a loop over `Modules.all`.** Today's `prepareMapData()` builds a 52-element
   positional array by hand; `load.ts` reads the same 52 indices back. Once every feature has a
@@ -243,6 +319,63 @@ module owns that entity. This is stated up front because it is the first thing t
 
   and the symmetric loop on load. This is the concrete mechanism by which this proposal and
   `future-data-model.md`'s keyed `data` object are the same migration, not two.
+
+- **`generation-pipeline.ts` keeps `stepOrder`, drops the two implementation arrays.** `stepOrder` is
+  the same 38 ids as today's `generationPipelineSteps`, in the same sequence, as a plain
+  `PipelineStepId[]` — the one thing that stays fully centralized and hand-reviewed, because sequence
+  is a cross-feature fact no module can express alone. A small `coreSteps` residual holds the
+  implementation for ids no feature owns (`grid`, `heightmap`, `markupGrid`, `regraph`, …, mirroring
+  the topology-data residual below). Everything else resolves from `Modules.all`:
+
+  ```ts
+  const moduleSteps = new Map(Modules.all.flatMap(m => m.pipelineSteps ?? []).map(s => [s.id, s]));
+  const resolve = (id: PipelineStepId) => {
+    const step = moduleSteps.get(id) ?? coreSteps[id];
+    if (!step) throw new Error(`Pipeline step "${id}" has no owner`);
+    return step;
+  };
+
+  const generationPipelineSteps = stepOrder.map(id => ({ id, run: resolve(id).run }));
+  const erasePipelineSteps = stepOrder
+    .filter(id => resolve(id).erase !== false)
+    .map(id => ({ id, run: resolve(id).erase || resolve(id).run }));
+  ```
+
+  This is a straight port of today's two arrays, not a behavior change: every `run`/`erase` closure
+  moves verbatim into whichever module (or `coreSteps`) owns that id, and the `false`-excluded ids
+  (`grid`, `heightmap`, `mapSize`, `clearPack`, `defaultRuler`, `addedLabels`, `journeys`) keep sitting
+  out the erase pipeline exactly as they do today — only now that's a `false` next to the step, not an
+  entry missing from a second hand-written array.
+
+- **`layers.ts` keeps `layerOrder`, drops the inline `new Layer(...)` list.** Same shape, for z-order:
+  a plain `LayerId[]` stays the single source of z-order truth, and each id resolves to a `LayerParams`
+  from `Modules.all` or a small `coreLayers` residual for chrome with no feature owner (`ocean`,
+  `coastline`, `compass`, `debug`, `scaleBar`, `vignette`, `legend`):
+
+  ```ts
+  const moduleLayers = new Map(Modules.all.filter(m => m.layer).map(m => [m.layer.id, m.layer]));
+  const resolveLayer = (id: LayerId) => moduleLayers.get(id) ?? coreLayers[id] ?? (() => { throw new Error(`Layer "${id}" has no owner`); })();
+
+  const mapLayers = layerOrder.map(id => new Layer(resolveLayer(id)));
+  ```
+
+  `LayersRegistry` and `Layer` are unchanged; `mapLayers` is still the exact array it constructs from
+  today, just assembled by lookup instead of by a 38-entry literal.
+
+- **`Controllers` becomes a composed registry, with a residual for non-feature dialogs.** Unlike
+  pipeline and layers, `Controllers` has no order to hand-declare — it is a flat name-to-import map, so
+  composition is a plain merge:
+
+  ```ts
+  const Controllers = createRegistry({
+    ...residualControllers, // ColorPicker, IconSelector, HelpAssistant, Minimap, … — no single feature owns these
+    ...Object.fromEntries(Modules.all.flatMap(m => Object.entries(m.controllers ?? {})))
+  });
+  ```
+
+  A registry test asserts no dialog name appears twice across modules and the residual — today a
+  duplicate key would just have the later `createRegistry` argument silently win; composed, it fails a
+  test instead.
 
 - **`optionsSchema`/`stylesSchema` become composed, not hand-typed.** `mapSchema` at
   `src/components/options-schema.ts:128` and `stylesSchema` at `src/generators/styles-schema.ts:57`
@@ -268,15 +401,19 @@ module owns that entity. This is stated up front because it is the first thing t
   module's `serialize` indexes into, not a feature of its own. It keeps whatever home the
   `future-data-model.md` migration gives it (`data.topology`), owned directly by `Save`/`Load`, not
   by a module. This mirrors `architecture.md`'s own advice to name a foundational bucket
-  (`src/state/`) rather than pretend everything is a feature.
+  (`src/state/`) rather than pretend everything is a feature — and it's the same call `coreSteps` and
+  `coreLayers` above make for the pipeline steps and layers that belong to topology/chrome rather than
+  a feature.
 
 - **`Layers.state`, `GraphOverride.state` and `options.app` are untouched.** They already have a
   single, working owner (`LayersRegistry`, `GraphOverride`, the app-preferences section of
   `configuration.md`) that this proposal has no reason to disturb — none of the three is "a feature's
-  own state" in the sense `data`/`mapConfig`/`generationConfig`/`style` are. `options.map` and `style`
-  *are* in scope, per the Solution section above, but only as composition of what already exists — the
-  single objects, their storage location, and every rule in `configuration.md` about them stay as
-  documented.
+  own state" in the sense `data`/`pipelineSteps`/`layer`/`controllers`/`mapConfig`/`generationConfig`/
+  `style` are. The visibility/order state a user toggles at runtime (`Layers.state`) is a different
+  thing from the *implementation* a layer's `draw` runs (`layer`, now module-owned) — this proposal
+  only moves the latter. `options.map` and `style` are in scope, per the Solution section above, but
+  only as composition of what already exists — the single objects, their storage location, and every
+  rule in `configuration.md` about them stay as documented.
 
 - **Legacy `.map` compatibility is one shim, not N.** The transition from positional array to keyed
   `data` object is itself a breaking format change, gated the same way every other breaking change in
@@ -286,48 +423,72 @@ module owns that entity. This is stated up front because it is the first thing t
   every feature has migrated and the shim has shipped for one full version cycle, the positional
   reader in `load.ts` can be deleted.
 
-- **Wiring-consistency test.** One test (`src/modules/index.test.ts`) iterates `Modules.all` and
-  asserts every id in `pipelineStepIds` exists in `GenerationPipeline`'s step list, every entry in
-  `controllers` exists in the `Controllers` registry, and every `layerId` exists in `Layers` — plus,
-  for the composed buckets, that every `mapConfig`/`generationConfig`/`style` key a module declares
-  is present, under that module's `id`, in the composed `optionsSchema`/`stylesSchema`. This is the
-  payoff for referencing instead of re-declaring: drift becomes a failing test instead of a runtime
-  `undefined` or a config field that silently stopped validating.
+- **Completeness is enforced twice.** For `pipelineSteps` and `layer`, `resolve`/`resolveLayer` throw
+  the moment `generationPipelineSteps`/`mapLayers` is built — at app startup and at the top of every
+  test that imports either module — so an id in `stepOrder`/`layerOrder` with no owner fails loudly and
+  immediately, not via a separate consistency test. What a registry test (`src/modules/index.test.ts`)
+  still needs to check is the *other* direction, which a throw can't catch: that a module doesn't
+  declare a `pipelineSteps`/`layer`/`controllers` entry whose id never appears in `stepOrder`/
+  `layerOrder`/anywhere (an orphaned entry that would simply never run or never render), that no two
+  modules (or a module and the residual) claim the same `Controllers` key, and that every `mapConfig`/
+  `generationConfig`/`style` key a module declares is present, under that module's `id`, in the
+  composed `optionsSchema`/`stylesSchema`. Together, this is a strictly stronger guarantee than the
+  reference-and-check version of this proposal: a broken wire is either a build-time throw or a failing
+  test, never a runtime `undefined`, a step that silently never runs, or a config field that silently
+  stopped validating.
 
 ## Migration Plan
 
 This is explicitly gradual, feature by feature, in either order — nothing in the design requires
-migrating features together, and nothing requires a feature's `data`, `mapConfig`,
-`generationConfig` and `style` entries to land in the same PR (a module can grow entries over time,
-same as it can be registered with just one). Two pilots are proposed first because, between them, they
-cover every axis a module can have except `generationConfig`:
+migrating features together, and nothing requires a feature's `data`, `pipelineSteps`, `layer`,
+`controllers`, `mapConfig`, `generationConfig` and `style` entries to land in the same PR (a module can
+grow entries over time, same as it can be registered with just one). Two pilots are proposed first
+because, between them, they cover most of the axes a module can have:
 
 - **Ice** (`src/generators/ice-generator.ts`, `src/controllers/ice-editor.ts`,
-  `src/renderers/draw-ice.ts`; ~365 lines total) is the minimal **data-only** case: one generator, one
-  controller, one layer, one dedicated data key (`pack.ice` → `data.ice`), no config and no style of
-  its own, no cross-feature callers. It proves the descriptor and the `serialize`/`deserialize` →
-  `Save`/`Load` wiring end to end at the lowest possible risk.
+  `src/renderers/draw-ice.ts`; ~365 lines total) is the minimal **data-and-execution** case: one
+  generator (its pipeline step, `run` only — `ice` runs identically in both pipelines, nothing to
+  exclude), one controller, one layer (`draw: drawIce`, no `erase` override, no children), one
+  dedicated data key (`pack.ice` → `data.ice`), no config and no style of its own, no cross-feature
+  callers. It proves the descriptor and the `serialize`/`deserialize` → `Save`/`Load` wiring, the
+  simplest pipeline-step case, and the simplest layer case, all at the lowest possible risk.
 - **Military** (`src/generators/military-generator.ts`, three controllers —
   `military-overview.ts`, `regiments-overview.ts`, `regiment-editor.ts` — and
-  `src/renderers/draw-military.ts`) is the minimal **config-and-style, no-data** case: no dedicated
-  data key (regiments live on `state.military`), multiple controllers under one feature, but a real
-  `mapConfig` (`options.map.military.units`, today `options-schema.ts:139`) and a real `style`
+  `src/renderers/draw-military.ts`) is the minimal **config-and-style, no-data, multi-controller**
+  case: no dedicated data key (regiments live on `state.military`), a pipeline step and layer as simple
+  as Ice's, but *three* controllers under one module and a real `mapConfig`
+  (`options.map.military.units`, today `options-schema.ts:139`) and `style`
   (`style.military`, today `styles-schema.ts:207`) to relocate. It proves the no-owned-data path,
   multi-controller aggregation, and the schema-relocation mechanics before either is assumed to
   generalize.
 
-A feature exercising `generationConfig` (for example Cultures or States, whose `growthRate` already
-lives in `options.generation` per `configuration.md`'s own example table) is left to the first
-post-pilot migration rather than a third dedicated pilot — by that point the schema-composition
-mechanism will already be proven for `mapConfig`, and `generationConfig` composes the same way.
+Between them the two pilots touch every one of the six composed sites at least once, at its simplest.
+What neither pilot exercises — deliberately, to keep the first two changes small — is left to named
+early follow-ups rather than invented in the abstract:
 
-Once both pilots land and the wiring-consistency test is in place, the remaining ~30 features
-(Markers, Journeys, Measurers, Zones, Goods/Markets/Deals, Religions, Provinces, Routes, …) migrate
-one PR at a time, each deleting its `save.ts` line and `load.ts` line, relocating whichever of its
-`options-schema.ts`/`styles-schema.ts` fields exist, and adding its `src/modules/<feature>.ts` file.
-`save.ts`/`load.ts` carry both the module loop and the shrinking legacy array side by side for the
-whole migration, and `options-schema.ts`/`styles-schema.ts` carry both the composed module slices and
-a shrinking residual literal; each artifact is deleted only once its residual is empty.
+- **`generationConfig`** (for example Cultures or States, whose `growthRate` already lives in
+  `options.generation` per `configuration.md`'s own example table) — the schema-composition mechanism
+  is already proven for `mapConfig` by Military, and `generationConfig` composes identically.
+- **A pipeline step with a real `erase` override** (Rivers and Biomes are the two real cases today —
+  `erase: ({erosion}) => Rivers.generate(erosion)` differs from `run`) or a step excluded entirely
+  (`erase: false` — Measurers' `defaultRuler` is the smallest real case, and doubles as the
+  layer-id-vs-module-id mismatch example, since its layer is `"rulers"`).
+- **A module owning more than one non-adjacent pipeline step** — States, once its `data` migration is
+  otherwise in scope, is the real case (`states`, `stateStatistics`, `stateForms`, `taxes`).
+- **A layer with `erase`, `children`, or `permanent`** (Routes has an `erase` override and three
+  children; nothing in either pilot's layer needs more than `draw`).
+
+None of these is a new mechanism — each is a field the descriptor already has (`erase`, plural
+`pipelineSteps`, `LayerParams`'s existing `children`/`permanent`/`erase`), just not yet exercised by
+the two smallest possible pilots. The first feature to migrate after both pilots land should be picked
+to cover one of these, not to keep avoiding them.
+
+Once both pilots land and completeness is enforced, the remaining ~30 features (Markers, Journeys,
+Measurers, Zones, Goods/Markets/Deals, Religions, Provinces, Routes, …) migrate one PR at a time, each
+deleting its now-redundant entries in `generation-pipeline.ts`, `layers.ts`, `controllers/index.ts`,
+`save.ts`/`load.ts` and the two schemas, and adding its `src/modules/<feature>.ts` file. Every composed
+site carries both the module contributions and its shrinking hand-authored residual side by side for
+the whole migration; each residual is deleted only once it's empty.
 
 Labels is a second attached case worth naming explicitly: label data already lives on many owning
 entities rather than one key, which is the same shape as Military's problem. Whatever the Labels
@@ -336,12 +497,14 @@ settles on, not invent a second one.
 
 ## Testing Decisions
 
-- **What makes a good test here:** assert the registry's external behavior against fake modules —
-  that `Modules.all` returns them in registration order, that the wiring-consistency check flags a
-  reference to a nonexistent pipeline step/controller/layer id, and that the `Save`/`Load` loop calls
-  `serialize`/`deserialize` for every module that has them and skips attached modules cleanly. Do not
-  assert on `Save`/`Load` internals beyond that loop.
-- **Module under test:** the registry list and the consistency check
+- **What makes a good test here:** assert the registry's external behavior against fake modules — that
+  `Modules.all` returns them in registration order, that `resolve`/`resolveLayer` throw for an order-list
+  id with no module or residual owner, that the orphan/duplicate-key checks flag a module's
+  `pipelineSteps`/`layer`/`controllers` entry absent from its order list or colliding with another
+  module's, and that the `Save`/`Load` loop calls `serialize`/`deserialize` for every module that has
+  them and skips attached modules cleanly. Do not assert on `Save`/`Load`, `Pipeline`, or
+  `LayersRegistry` internals beyond those seams.
+- **Module under test:** the registry list and its completeness/orphan checks
   (`src/modules/index.test.ts`), built over fake module objects the same way
   `src/components/layers.test.ts` builds its own `LayersRegistry` instance over fake layers rather
   than the real singleton.
@@ -362,8 +525,14 @@ settles on, not invent a second one.
 - **Physically colocating a feature's files** into `src/modules/<feature>/{generator,editor,renderer}.ts`.
   Considered and rejected for this proposal in favor of the lower-disruption descriptor approach;
   nothing here forecloses it later if the descriptor pattern proves the boundaries right.
-- **Rewriting the pipeline runner or `LayersRegistry`.** Both are unchanged; feature modules reference
-  their ids, they don't replace their ordering logic.
+- **Rewriting the `Pipeline`/`LayersRegistry` classes, or their ordering logic.** Both classes, and
+  `stepOrder`/`layerOrder` as plain hand-authored id lists, are unchanged; feature modules supply the
+  `run`/`draw`/`erase` implementation `resolve`/`resolveLayer` look up, they do not replace how
+  sequence or z-order is decided or run.
+- **A `dependsOn` dependency graph for pipeline steps.** Already considered and rejected on its own
+  merits in `docs/architecture/generation-pipeline.md` ("added validation logic and API surface without
+  doing any work"); owning a step's `run` is not a reason to revisit that. `stepOrder` stays a flat,
+  explicit sequence a human wrote down, exactly as it is today.
 - **Finishing `docs/prd/style-migration.md`'s step 5.** That step (moving each feature's remaining
   hand-picked "decision attributes" — heightmap scheme, halo width, scale-bar geometry, … — off the
   DOM one at a time) is independent of this proposal and already has its own plan; a module's `style`
@@ -389,19 +558,23 @@ settles on, not invent a second one.
 
 ## Possible Future Expansions
 
-Not part of this proposal — v1 stops at descriptors that compose `data`, `options.map`/
-`options.generation`, and `style`. They're recorded because the same shape of change keeps recurring
-once a module exists, and it's the descriptor's shape specifically (a stable `id`, self-typed schema
-slices) that would make each one cheap later, without revisiting an already-migrated module.
+Not part of this proposal — v1 stops at descriptors that compose `data`, `pipelineSteps`, `layer`,
+`controllers`, `options.map`/`options.generation`, and `style`. They're recorded because the same shape
+of change keeps recurring once a module exists, and it's the descriptor's shape specifically (a stable
+`id`, self-typed schema slices, owned implementations) that would make each one cheap later, without
+revisiting an already-migrated module.
 
-**The throughline is inverting the dependency, not just the storage.** Today `Save`/`Load` (and,
-pre-migration, `optionsSchema`/`stylesSchema`) know about every feature by name — hand-written code per
-feature. After migration they know about none of them: they iterate `Modules.all` and call the same
-handful of methods on whichever modules happen to be registered. Adding module #31 means writing
-`src/modules/thirty-first-feature.ts` and one line in `src/modules/index.ts` — `Save`, `Load`,
-`optionsSchema` and `stylesSchema` need no edit. v1 scopes that inversion to storage. The same
-inversion applies, in principle, to anything that today has a bespoke per-feature branch instead of a
-loop over feature metadata:
+**The throughline is inverting the dependency, not just the storage.** Today `Save`/`Load`,
+`generation-pipeline.ts`, `layers.ts`, `controllers/index.ts` and (pre-migration) `optionsSchema`/
+`stylesSchema` all know about every feature by name — hand-written code per feature. After migration
+they know about none of them: each iterates `Modules.all` (or, for pipeline/layers, a hand-authored
+order list plus a lookup into it) and calls the same handful of methods on whichever modules happen to
+be registered. Adding module #31 means writing `src/modules/thirty-first-feature.ts`, one line in
+`src/modules/index.ts`, and — only if the feature runs during generation or draws a layer — one id in
+`stepOrder`/`layerOrder`. None of the six composed sites need a second edit. v1 scopes that inversion to
+storage and execution together, because splitting them turned out to be the thing that made v1 not
+worth doing on its own. The same inversion applies, in principle, to anything that today has a bespoke
+per-feature branch instead of a loop over feature metadata:
 
 - **A generic module inventory / debug surface.** The cheapest, most literal consumer of
   `Modules.all` — a panel or dev tool listing every registered module and what it owns, with zero
@@ -425,14 +598,15 @@ loop over feature metadata:
   "bring just the Cultures setup from map A into map B" becomes reading three identically-keyed slices
   from one file and running them through one module's `deserialize` calls — expressible generically
   ("pick a module, pick a target map") instead of a bespoke field list per feature.
-- **Feature toggles at generation or export time.** A module is, by the end of migration, the complete
-  manifest of what a feature touches. "Generate a map without Military" or "export without Journeys"
-  becomes a filter over `Modules.all` — skip the pipeline step and the serialize call — instead of a
-  hand-maintained exception list.
-- **A per-module `regenerate()` hook.** `docs/architecture/generation-pipeline.md` already states an
-  unmet goal — "systems should be independently runnable" — met today only ad hoc
-  (`Markets.expandTerritories`, `Population.regenerate()`). A fourth optional descriptor method is a
-  small addition once `data`/`mapConfig`/`style` exist and are trusted.
+- **Feature toggles at generation or export time.** v1 already lets a module opt a step out of the
+  erase pipeline (`erase: false`); toggling it out of the *generation* pipeline too — "generate a map
+  without Military" — is one more filter over `stepOrder`/`Modules.all` before `resolve()` runs, plus
+  the equivalent skip in the `Save`/`Load` loop, rather than a hand-maintained exception list.
+- **A per-module `regenerate()` hook**, distinct from owning `run`: v1's `pipelineSteps` lets a module
+  supply its full-generation step, but re-running *just* that module against an already-generated map
+  (`docs/architecture/generation-pipeline.md`'s unmet "systems should be independently runnable" goal,
+  met today only ad hoc via `Markets.expandTerritories`/`Population.regenerate()`) needs a second,
+  narrower method a module could opt into once its `pipelineSteps` implementation is trusted.
 - **Per-module migrations.** Once the legacy positional array and the schema residuals are fully
   retired, a module could own a small version-gated migration for its own key, in its own file, instead
   of one more `isOlderThan(...)` block in the 2083-line `auto-update.ts`. This one specifically has to
@@ -452,14 +626,22 @@ The generic-panel items especially are real UI projects, not incidental: they ne
 component that doesn't exist yet, and today's per-feature editors mix simple fields with bespoke
 interaction, so "generic" will always coexist with "custom panel, module opts out." What v1 buys toward
 all of it is the one thing that has to be true first — a stable, typed, self-describing slice per
-feature that the rest of the app can iterate instead of name.
+feature, with its own execution, that the rest of the app can iterate instead of name.
 
 ## Further Notes
 
-- **The wiring-consistency test is the main new correctness guarantee**, not the registry itself —
+- **Completeness-by-construction is the main new correctness guarantee**, not the registry itself —
   the registry's *data* (the list of feature modules) is configuration, same as `Controllers`,
-  `Services` and the layer list; what's worth testing is that it stays truthful against the other
-  three registries as all four evolve independently.
+  `Services` and the layer list; what's worth testing is that `stepOrder`/`layerOrder`/`Controllers`
+  composition stays truthful against `Modules.all` as both evolve independently. A throw at
+  composition time (pipeline, layers) is stronger than a test that can be skipped or go stale; a test
+  is still needed for the direction a throw can't see — orphaned module entries and duplicate keys.
+- **Moving a step's `run`/`erase`, a layer's `draw`/`erase`, and a feature's `Controllers` entries into
+  its module is a relocation, not a rewrite** — each closure moves verbatim from
+  `generation-pipeline.ts`/`layers.ts`/`controllers/index.ts` into `src/modules/<feature>.ts`, same
+  body, same imports, same behavior. The feature's own generator/controller/renderer test suites are
+  what catch a regression here, the same way they would if the closure had never moved; this proposal
+  adds no new behavioral testing burden per migrated feature beyond what already existed.
 - **The legacy-array shim is the single riskiest piece of the whole migration**, precisely because it
   is a one-time, all-52-fields translation rather than 30 small independent changes. It deserves the
   same review weight `docs/prd/layers-management.md` gave the `data[50]` backfill block, and should
@@ -468,7 +650,8 @@ feature that the rest of the app can iterate instead of name.
 - **This does not change the "imports point down" rule.** `src/modules/` sits above generators,
   controllers and renderers in the dependency direction (it imports their exports to build
   descriptors), the same position `controllers/index.ts` and `services/index.ts` already occupy for
-  their registries.
+  their registries. `generation-pipeline.ts` and `layers.ts` now import from `src/modules/` instead of
+  directly from each feature's generator/renderer — a downward-pointing edge shifts, none reverses.
 - **The schema-composition equivalence test is a second risk on the same order as the legacy-array
   shim**, for the same reason: `z.strictObject` field order and `Object.fromEntries` insertion order
   are both observable if anything downstream ever depended on key order (nothing documented does, but
