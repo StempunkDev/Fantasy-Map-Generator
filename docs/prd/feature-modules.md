@@ -6,7 +6,7 @@ A map feature — Military, Markers, Ice, Religions, Journeys — already exists
 practice: a generator, one or more controllers, a renderer, and a slice of `pack`/`options.map`. What
 it does not have is a single file that says so. The slice is held together only by a shared filename
 prefix (`military-generator.ts`, `military-overview.ts`, `draw-military.ts`) and by hand-written
-entries in four unrelated places:
+entries in six unrelated places:
 
 - **`src/generators/generation-pipeline.ts`** — the pipeline step id, at the correct phase, in both
   `GenerationPipeline` and (if it runs after `regraph`) `ErasePipeline` — today two separately
@@ -20,33 +20,36 @@ entries in four unrelated places:
 - **`src/services/io/save.ts`** / **`src/services/io/load.ts`** — one more slot appended to (or read
   by index from) a 52-element positional array, plus a migration in **`auto-update.ts`** (2083 lines)
   if the shape ever changes.
+- **`src/components/options-schema.ts:128`** (`mapSchema`) — one large hand-typed `z.strictObject`
+  literal, one field per feature (Military's is `military: z.strictObject({units: ...})` at line 139),
+  declared nowhere near `military-generator.ts` or `military-overview.ts`.
+- **`src/generators/styles-schema.ts:57`** (`stylesSchema`) — the same shape of monolith for style,
+  with its own `military: z.strictObject({...})` at line 207, tied to the other five only by the
+  shared string `"military"`.
 
-Nothing enforces that these four stay in sync. `save.ts` and `load.ts` already carry the scar tissue
-of that: `data[23]`, `data[28]`, `data[33]`, `data[45]` are permanent empty-string placeholders for
-fields nobody can safely reuse, because reusing an index silently reassigns someone else's data.
-Adding a field means appending at the end and hoping nobody inserts in the middle; removing one means
-leaving a hole forever. There is no compiler or test that would catch a mismatch — the array is
-`string[]`, read back by numeric index, documented only in `docs/architecture/data-model.md`'s prose.
+Nothing enforces that these six stay in sync. `save.ts` and `load.ts` already carry the scar tissue of
+that: `data[23]`, `data[28]`, `data[33]`, `data[45]` are permanent empty-string placeholders for fields
+nobody can safely reuse, because reusing an index silently reassigns someone else's data. Adding a
+field means appending at the end and hoping nobody inserts in the middle; removing one means leaving a
+hole forever. There is no compiler or test that would catch a mismatch — the array is `string[]`, read
+back by numeric index, documented only in `docs/architecture/data-model.md`'s prose. A contributor
+adding a config field or a style attribute hits the identical problem one file over: a monolith with no
+relationship to the feature's own files, keyed only by a string it has to spell correctly.
 
 There is also no single file a contributor can open to learn "what is the Military feature." The
-answer today is: grep for the prefix across three folders and cross-reference `generation-pipeline.ts`
-and `layers.ts` by hand.
+answer today is: grep for the prefix across three folders and cross-reference the other five places by
+hand.
 
-This is about to get worse, not better, on its own: `docs/architecture/future-data-model.md` already
-specifies a `.map` format where `data` is a keyed object (`data.states`, `data.cultures`,
-`data.settlements`, …) instead of a positional array. That migration has to rewrite `save.ts`,
-`load.ts` and a large slice of `auto-update.ts` regardless of this proposal. Doing that rewrite without
-also giving each feature a place to own its own key just reproduces the same "four unrelated files"
-problem with better key names.
-
-The same shape of problem already exists, today, in the other two places a feature keeps serializable
-state. `src/components/options-schema.ts:128` (`mapSchema`) and `src/generators/styles-schema.ts:57`
-(`stylesSchema`) are each one large hand-typed `z.strictObject` literal with one field per feature —
-`mapSchema` has `military: z.strictObject({units: ...})` at line 139, `stylesSchema` has its own
-`military: z.strictObject({...})` at line 207 — declared nowhere near `military-generator.ts` or
-`military-overview.ts`, with nothing tying the three together but the shared string `"military"`. A
-contributor adding a config field or a style attribute for a feature edits a monolith file that has
-no relationship to the feature's own files, exactly as `save.ts`'s array does for world data.
+**This proposal targets `docs/architecture/future-data-model.md` directly, not "today, plus a future
+migration later."** That document already specifies a `.map` format where `data` is a keyed object
+(`data.states`, `data.cultures`, `data.settlements`, …) instead of a positional array — a rewrite of
+`save.ts`, `load.ts` and a large slice of `auto-update.ts` that has to happen regardless of this
+proposal, on its own timeline. A feature module's `id` *is* the key `future-data-model.md` already
+specifies (`data.<id>`); there is no second, module-specific naming scheme layered on top. Doing that
+rewrite without also giving each feature a place to own its key reproduces the six-places problem with
+better key names instead of solving it — so this document is written against the target shape
+(`data.<id>`, keyed by module), with today's 52-element positional array treated as what it will
+become: one version-gated legacy reader, not the format the six composed sites are designed around.
 
 ## Solution
 
@@ -55,7 +58,8 @@ feature — its pipeline step `run`/`erase` implementations, its `Controllers` d
 `draw`/`erase` — and, for each of the three serializable buckets an FMG feature can have, its slice of
 that bucket:
 
-- **world data** — `data.<id>` in the future `.map` format (`docs/architecture/future-data-model.md`)
+- **world data** — `data.<id>`, the keyed shape `docs/architecture/future-data-model.md` already
+  specifies; a module's `id` is that key, not a second name for it
 - **map config** — `options.map.<id>`, and **generation config** — `options.generation.<id>`
   (`docs/architecture/configuration.md`)
 - **style** — `style.<id>` (`docs/architecture/architecture.md`'s Map Styling section, which already
@@ -103,11 +107,12 @@ const Controllers = createRegistry({
 `resolve`/`resolveLayer` check the module registry first, then a small hand-authored residual for
 ids no feature owns (see below), and throw if neither has the id — completeness is enforced by the
 pipeline/layer list failing to build, not by a separate test catching drift after the fact. This is
-the exact same composition already proposed for the other four places: `save.ts` iterates
+the exact same composition already applied to the other four of the six places: `save.ts` iterates
 `Modules.all` and calls `serialize()`; `mapSchema` spreads `m.mapConfig.schema` behind a shrinking
-residual. Nothing here is a new idea — it is the same pattern, applied to the two places (pipeline,
-layers) where a duplicated-implementation problem is already documented, plus the one place
-(`Controllers`) that has no order to hand-declare at all.
+residual, and `stylesSchema` the equivalent for `style`. Nothing here is a new idea per place — it is
+one pattern, applied uniformly to all six: an order or key stays centrally declared where one is a real
+cross-feature fact, an implementation is looked up from `Modules.all`, and a residual covers what no
+feature owns.
 
 Deriving `erasePipelineSteps` this way is also the concrete fix for the fragility named in the Problem
 Statement: a step's erase behavior (same closure, a different one, or `false` to sit out the erase
@@ -221,12 +226,14 @@ design.
     uses of the word (self-registering generator singletons, the legacy `public/modules/**/*.js`
     tree, "the Grid modules" in `generation-pipeline.md`), so that documentation and code comments
     don't collide in meaning.
-19. As a contributor, I want the two pilot modules (one data-owning, one config-and-style-owning) to
-    be small and reviewable on their own, so that the pattern is proven across its different axes
-    before the remaining ~30 features migrate.
+19. As a contributor, I want the two pilot modules (Ice: data-and-execution; Military:
+    config-and-style, no-data, multi-controller) to be small and reviewable on their own, so that the
+    pattern is proven across most of its axes before the remaining ~30 features migrate.
 20. As a maintainer, I want this proposal to touch nothing about `Layers.state` or
-    `GraphOverride.state` persistence, or about `options.app`, so that it stays scoped to the three
-    per-feature buckets and doesn't re-litigate ownership that already has a single, working home.
+    `GraphOverride.state` persistence, or about `options.app`, so that it stays scoped to what a
+    feature module owns (`data`, `pipelineSteps`, `layer`, `controllers`, `mapConfig`,
+    `generationConfig`, `style`) and doesn't re-litigate ownership that already has a single, working
+    home.
 21. As a contributor, I want a module's `serialize`/`deserialize` to be plain, testable functions with
     no DOM or ambient-global dependency beyond what the feature's generator/controller already use, so
     that IO ownership doesn't become a new place for hidden coupling.
@@ -246,7 +253,8 @@ design.
 ## Implementation Decisions
 
 - **Location:** `src/modules/`, a new top-level folder. It is not `core/` — it has one precise job
-  (feature manifests plus `data.*` IO dispatch) and is justified the way
+  (owning a feature's definition across all six composed sites: `data`, `pipelineSteps`, `layer`,
+  `controllers`, `mapConfig`/`generationConfig`, `style`) and is justified the way
   `docs/architecture/architecture.md`'s "Why no `core/`" section asks: a meaningful name for a
   genuinely foundational, cross-cutting concern, not a junk drawer. One file per feature
   (`src/modules/military.ts`, `src/modules/ice.ts`, …) plus `src/modules/index.ts` holding the
@@ -575,6 +583,41 @@ be registered. Adding module #31 means writing `src/modules/thirty-first-feature
 storage and execution together, because splitting them turned out to be the thing that made v1 not
 worth doing on its own. The same inversion applies, in principle, to anything that today has a bespoke
 per-feature branch instead of a loop over feature metadata:
+
+**The end state this points at: a module owns every facet of what a feature is, not most of it.**
+v1's descriptor already has all seven fields (`data`, `pipelineSteps`, `layer`, `controllers`,
+`mapConfig`, `generationConfig`, `style`) — the "future work" isn't a bigger interface, it's finishing
+the migration until every feature that has a given facet owns it *through* its module instead of
+partially through it. A feature isn't done migrating because it has a `src/modules/<feature>.ts` file;
+it's done when that file is the only place a contributor writes code that says "here is what this
+feature is" — no stray option still sitting in the `mapSchema` residual because only `data` got moved,
+no layer whose `erase` still lives by hand in `layers.ts` because only the `draw` got relocated. Partial
+adoption is allowed *during* migration (Implementation Decisions already says every field is
+independently optional) but is not the target state for a feature that's finished.
+
+That completeness is also what shrinks the two remaining shared surfaces over time: `stepOrder`/
+`layerOrder` and the schema/registry residuals only carry entries for what nothing yet owns. As more of
+the ~30 features finish migrating in full, both shrink toward holding only the genuinely foundational,
+non-feature ids (`grid`, `heightmap`, `ocean`, `coastline`, …) that were never going to be a module —
+never toward zero, because topology and chrome are real, but toward their true, much smaller floor.
+
+**This is what "decoupled" means here, concretely, not as an abstraction.** Once a feature has fully
+migrated, its own file is the only file its own future changes touch — adding a config field, changing
+a layer's children, renaming a dialog — except for one line in `stepOrder`/`layerOrder` if (and only
+if) the feature's presence there changes at all, and one line in `src/modules/index.ts` if the feature
+is newly added or removed. A second feature's migration, addition, or removal never requires touching
+the first feature's file, because none of the six composed sites branch on feature identity anymore —
+they iterate `Modules.all` and read a residual. That is deliberately **not** the same as making the two
+order lists disappear. `stepOrder` and `layerOrder` stay small, hand-authored, and centrally reviewed
+on purpose — the same reasoning that already rejected a `dependsOn` graph in
+`docs/architecture/generation-pipeline.md`, and that this document's Solution section already gives for
+why z-order and generation order can't be derived from module registration order: sequence and z-order
+are cross-feature facts, and letting a module declare its own position would mean every module has to
+know about every other module's position to avoid colliding with it — a tighter coupling than the one
+being removed, not a looser one. Keeping those two lists small and deliberately "closed" (centrally
+owned, rarely touched, one line per feature) is precisely what makes everything else genuinely open: a
+feature's file can change freely because the only shared surface it ever has to touch back is kept too
+small and too boring to fight over.
 
 - **A generic module inventory / debug surface.** The cheapest, most literal consumer of
   `Modules.all` — a panel or dev tool listing every registered module and what it owns, with zero
