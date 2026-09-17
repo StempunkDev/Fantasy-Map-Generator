@@ -30,35 +30,29 @@ export interface Army {
 /** the model keys armies by state id instead of hanging them off the state */
 export type Armies = Record<number, Army>;
 
-// declared apart from the module: inlining these would widen their types, see map-module.ts
-const controllers = {
-  MilitaryOverview: () => import("@/controllers/military-overview").then(m => m.MilitaryOverview),
-  RegimentsOverview: () => import("@/controllers/regiments-overview").then(m => m.RegimentsOverview),
-  RegimentEditor: () => import("@/controllers/regiment-editor").then(m => m.RegimentEditor),
-  BattleScreen: () => import("@/controllers/battle-screen").then(m => m.BattleScreen)
-};
-
-const styles = {
-  military: z.strictObject({
-    attrs: z.strictObject({ opacity, ...strokeAttrs, "fill-opacity": opacity, filter }),
-    options: z.strictObject({ fontSize: z.number(), boxSize: z.number() })
-  })
-};
-
-const options = {
-  map: {
-    schema: { military: z.strictObject({ units: z.array(militaryUnit) }) },
-    defaults: () => ({ military: { units: DEFAULT_MILITARY_UNITS } })
-  }
-};
-
 export const MilitaryModule = {
   id: "military",
-  steps: ["military"],
+  // the generators are reached through their globals, so a module never pulls one into its chunk
+  steps: { military: () => Military.generate() },
   layer: "military",
-  controllers,
-  styles,
-  options,
+  controllers: {
+    MilitaryOverview: async () => (await import("@/controllers/military-overview")).MilitaryOverview,
+    RegimentsOverview: async () => (await import("@/controllers/regiments-overview")).RegimentsOverview,
+    RegimentEditor: async () => (await import("@/controllers/regiment-editor")).RegimentEditor,
+    BattleScreen: async () => (await import("@/controllers/battle-screen")).BattleScreen
+  },
+  styles: {
+    military: z.strictObject({
+      attrs: z.strictObject({ opacity, ...strokeAttrs, "fill-opacity": opacity, filter }),
+      options: z.strictObject({ fontSize: z.number(), boxSize: z.number() })
+    })
+  },
+  options: {
+    map: {
+      schema: { military: z.strictObject({ units: z.array(militaryUnit) }) },
+      defaults: () => ({ military: { units: DEFAULT_MILITARY_UNITS } })
+    }
+  },
   // armies stay on pack.states at runtime, so every state.military reader is untouched;
   // only the model's view of them is separate. Deserialize runs after states, see modules/index.ts
   data: {

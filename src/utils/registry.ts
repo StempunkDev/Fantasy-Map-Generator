@@ -1,7 +1,7 @@
 // The lazy module registry. Note it calls `tip`/`clearMainTip` through the window bridge, not an
 // import: utils sits below the UI layer and must never import from components/
 
-type Loader<T> = () => Promise<T>;
+export type Loader<T> = () => Promise<T>;
 type DispatchFn = (...args: unknown[]) => unknown;
 
 let pendingLoads = 0;
