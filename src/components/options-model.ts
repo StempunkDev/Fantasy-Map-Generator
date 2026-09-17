@@ -11,9 +11,9 @@ import { Coastline } from "@/generators/coastline-generator";
 import { Coordinates } from "@/generators/coordinates";
 import { CULTURE_SETS } from "@/generators/cultures-generator";
 import { Labels } from "@/generators/labels-generator";
-import { Military } from "@/generators/military-generator";
 import { Names } from "@/generators/names-generator";
 import { Transports } from "@/generators/transports-generator";
+import { MilitaryModule, StatesModule } from "@/modules";
 import { safeParseJSON } from "@/utils";
 import { rn } from "@/utils/numberUtils";
 import { deepMerge } from "@/utils/objectUtils";
@@ -65,7 +65,7 @@ class OptionsModel {
         style: { preset: "default" },
         burgs: { groups: Burgs.getDefaultGroups() },
         labels: { resizeOnZoom: true, groups: Labels.getDefaultGroups() },
-        military: { units: Military.getDefaultOptions() },
+        ...MilitaryModule.options.map.defaults(),
         transports: Transports.getDefaults(),
         coastline: Coastline.getDefaultSettings()
       },
@@ -76,7 +76,7 @@ class OptionsModel {
         resolveDepressionsSteps: 250,
         lakeElevationLimit: 20,
         cultures: { limit: 12, set: "world", sizeVariety: 4, growthRate: 1 },
-        states: { limit: 18, sizeVariety: 4, growthRate: 1 },
+        ...StatesModule.options.generation.defaults(),
         provinces: { ratio: 20 },
         religions: { limit: 6 },
         burgs: { limit: 1000 }

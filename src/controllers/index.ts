@@ -1,8 +1,9 @@
+import { IceModule, MilitaryModule, StatesModule } from "@/modules";
 import { createRegistry } from "@/utils/registry";
 
+// dialogs no map module owns; each module contributes its own
 export const Controllers = createRegistry({
   AiGenerator: () => import("@/controllers/ai-generator").then(m => m.AiGenerator),
-  BattleScreen: () => import("@/controllers/battle-screen").then(m => m.BattleScreen),
   BiomesEditor: () => import("@/controllers/biomes-editor").then(m => m.BiomesEditor),
   BurgCreator: () => import("@/controllers/burg-creator").then(m => m.BurgCreator),
   BurgEditor: () => import("@/controllers/burg-editor").then(m => m.BurgEditor),
@@ -14,7 +15,6 @@ export const Controllers = createRegistry({
   ColorPicker: () => import("@/controllers/color-picker").then(m => m.ColorPicker),
   ComparePrices: () => import("@/controllers/compare-prices").then(m => m.ComparePrices),
   CulturesEditor: () => import("@/controllers/cultures-editor").then(m => m.CulturesEditor),
-  DiplomacyEditor: () => import("@/controllers/diplomacy-editor").then(m => m.DiplomacyEditor),
   DistributionEditor: () => import("@/controllers/goods-distribution-editor").then(m => m.DistributionEditor),
   ElevationProfile: () => import("@/controllers/elevation-profile").then(m => m.ElevationProfile),
   EmblemsEditor: () => import("@/controllers/emblems-editor").then(m => m.EmblemsEditor),
@@ -26,7 +26,6 @@ export const Controllers = createRegistry({
   HelpAssistant: () => import("@/controllers/help-assistant").then(m => m.HelpAssistant),
   IconSelector: () => import("@/controllers/icon-selector").then(m => m.IconSelector),
   HierarchyTree: () => import("@/controllers/hierarchy-tree").then(m => m.HierarchyTree),
-  IceEditor: () => import("@/controllers/ice-editor").then(m => m.IceEditor),
   JourneyEditor: () => import("@/controllers/journey/journey-editor").then(m => m.JourneyEditor),
   JourneysOverview: () => import("@/controllers/journey/journeys-overview").then(m => m.JourneysOverview),
   LabelsEditor: () => import("@/controllers/labels-editor").then(m => m.LabelsEditor),
@@ -44,7 +43,6 @@ export const Controllers = createRegistry({
   MarketOverview: () => import("@/controllers/market-overview").then(m => m.MarketOverview),
   MarketsOverview: () => import("@/controllers/markets-overview").then(m => m.MarketsOverview),
   MeasurersEditor: () => import("@/controllers/measurers-editor").then(m => m.MeasurersEditor),
-  MilitaryOverview: () => import("@/controllers/military-overview").then(m => m.MilitaryOverview),
   Minimap: () => import("@/controllers/minimap").then(m => m.Minimap),
   NamesbaseEditor: () => import("@/controllers/namesbase-editor").then(m => m.NamesbaseEditor),
   NotesEditor: () => import("@/controllers/notes-editor").then(m => m.NotesEditor),
@@ -53,8 +51,6 @@ export const Controllers = createRegistry({
   ProductionChains: () => import("@/controllers/production-chains").then(m => m.ProductionChains),
   ProductionOverview: () => import("@/controllers/production-overview").then(m => m.ProductionOverview),
   ProvincesEditor: () => import("@/controllers/provinces-editor").then(m => m.ProvincesEditor),
-  RegimentEditor: () => import("@/controllers/regiment-editor").then(m => m.RegimentEditor),
-  RegimentsOverview: () => import("@/controllers/regiments-overview").then(m => m.RegimentsOverview),
   ReliefEditor: () => import("@/controllers/relief-editor").then(m => m.ReliefEditor),
   ReligionsEditor: () => import("@/controllers/religions-editor").then(m => m.ReligionsEditor),
   RiverCreator: () => import("@/controllers/river-creator").then(m => m.RiverCreator),
@@ -65,7 +61,6 @@ export const Controllers = createRegistry({
   RouteEditor: () => import("@/controllers/route-editor").then(m => m.RouteEditor),
   RouteGroupsEditor: () => import("@/controllers/route-groups-editor").then(m => m.RouteGroupsEditor),
   RoutesOverview: () => import("@/controllers/routes-overview").then(m => m.RoutesOverview),
-  StatesEditor: () => import("@/controllers/states-editor").then(m => m.StatesEditor),
   SubmapTool: () => import("@/controllers/submap-tool").then(m => m.SubmapTool),
   TemperatureGraph: () => import("@/controllers/temperature-graph").then(m => m.TemperatureGraph),
   TradeAnimationEditor: () => import("@/controllers/trade-animation-editor").then(m => m.TradeAnimationEditor),
@@ -76,7 +71,10 @@ export const Controllers = createRegistry({
   UnitsEditor: () => import("@/controllers/units-editor").then(m => m.UnitsEditor),
   View3d: () => import("@/controllers/view-3d").then(m => m.View3d),
   WorldConfigurator: () => import("@/controllers/world-configurator").then(m => m.WorldConfigurator),
-  ZonesEditor: () => import("@/controllers/zones-editor").then(m => m.ZonesEditor)
+  ZonesEditor: () => import("@/controllers/zones-editor").then(m => m.ZonesEditor),
+  ...IceModule.controllers,
+  ...StatesModule.controllers,
+  ...MilitaryModule.controllers
 });
 
 type ControllersRegistry = typeof Controllers;

@@ -7,6 +7,8 @@ import { tip } from "@/components/tooltips";
 import { GraphOverride } from "@/generators/graph-override";
 import { Services } from "@/services";
 import { getUsedFonts } from "@/services/fonts";
+import { ICE_SLOT, STATES_SLOT, toLegacySlots } from "@/services/io/legacy";
+import { serializeModules } from "@/services/io/module-data";
 import { savedMessage } from "@/services/platform";
 import { VERSION } from "@/services/versioning";
 import { ensureEl, getFileName, link, parseError, rn } from "@/utils";
@@ -102,7 +104,7 @@ function prepareMapData(): string {
   const packFeatures = JSON.stringify(pack.features);
   const biomes = JSON.stringify(pack.biomes);
   const cultures = JSON.stringify(pack.cultures);
-  const states = JSON.stringify(pack.states);
+  const moduleSlots = toLegacySlots(serializeModules());
   const burgs = JSON.stringify(pack.burgs);
   const religions = JSON.stringify(pack.religions);
   const provinces = JSON.stringify(pack.provinces);
@@ -112,7 +114,6 @@ function prepareMapData(): string {
   const cellRoutes = JSON.stringify(pack.cells.routes);
   const routes = JSON.stringify(pack.routes);
   const zones = JSON.stringify(pack.zones);
-  const ice = JSON.stringify(pack.ice);
   const goods = JSON.stringify(pack.goods);
   const markets = JSON.stringify(pack.markets || []);
   const deals = JSON.stringify(pack.deals || []);
@@ -154,7 +155,7 @@ function prepareMapData(): string {
     grid.cells.temp,
     packFeatures,
     cultures,
-    states,
+    moduleSlots[STATES_SLOT],
     burgs,
     pack.cells.biome,
     pack.cells.burg,
@@ -179,7 +180,7 @@ function prepareMapData(): string {
     cellRoutes,
     routes,
     zones,
-    ice,
+    moduleSlots[ICE_SLOT],
     pack.cells.good,
     goods,
     markets,

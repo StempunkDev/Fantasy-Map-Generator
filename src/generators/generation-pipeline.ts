@@ -53,7 +53,7 @@ const generationPipelineSteps = [
   { id: "journeys", run: () => Journeys.generate() }
 ] as const satisfies PipelineStep<string, GenerationContext>[];
 
-type GenerationPipelineStepId = (typeof generationPipelineSteps)[number]["id"];
+export type GenerationPipelineStepId = (typeof generationPipelineSteps)[number]["id"];
 
 type GenerationContext = {
   graph?: GridGraph; // pre-created grid to use instead of generating one

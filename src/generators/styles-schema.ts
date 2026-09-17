@@ -1,30 +1,26 @@
 import { z } from "zod";
 import type { LayerId } from "@/components/layers";
+import { IceModule, MilitaryModule, StatesModule } from "@/modules";
 
-// One shared type per recurring attribute; attrs written to the DOM, null = attribute not set
-const opacity = z.number().nullable();
-const color = z.string().nullable();
-const strokeWidth = z.number().nullable();
-const strokeDasharray = z.string().nullable().default(null);
-const strokeLinecap = z.string().nullable();
-const strokeLinejoin = z.string().nullable();
-const letterSpacing = z.number().nullable();
-const fontFamily = z.string();
-const fontWeight = z.number().int().min(100).max(950).nullable().default(null);
-const filter = z.string().nullable();
-const mask = z.string().nullable();
-const transform = z.string().nullable();
-const percentage = z.string().regex(/^-?\d+(\.\d+)?%$/);
-const fontSize = z.string(); // font sizes carry legacy dialects ("6%", "12px", "18"), so no format validator
-const styleAttr = z.string().nullable(); // CSSStyleDeclaration.cssText: text-shadow, text-transform and label shift transform live here
-
-const strokeAttrs = {
-  stroke: color,
-  "stroke-width": strokeWidth,
-  "stroke-dasharray": strokeDasharray,
-  "stroke-linecap": strokeLinecap
-};
-const fillAttrs = { fill: color, "fill-opacity": opacity };
+import {
+  color,
+  fillAttrs,
+  filter,
+  fontFamily,
+  fontSize,
+  fontWeight,
+  letterSpacing,
+  mask,
+  opacity,
+  percentage,
+  strokeAttrs,
+  strokeDasharray,
+  strokeLinecap,
+  strokeLinejoin,
+  strokeWidth,
+  styleAttr,
+  transform
+} from "./style-attrs";
 
 const lake = z.strictObject({
   attrs: z.strictObject({ opacity, ...fillAttrs, ...strokeAttrs, filter }),
@@ -189,13 +185,7 @@ export const stylesSchema = z.strictObject({
   }),
   religions: z.strictObject({ attrs: z.strictObject({ opacity, ...strokeAttrs, filter }) }),
   cultures: z.strictObject({ attrs: z.strictObject({ opacity, ...strokeAttrs, filter }) }),
-  states: z.strictObject({
-    statesBody: z.strictObject({ attrs: z.strictObject({ opacity, filter }) }),
-    statesHalo: z.strictObject({
-      attrs: z.strictObject({ opacity, "stroke-width": strokeWidth, filter }),
-      options: z.strictObject({ width: z.number() })
-    })
-  }),
+  ...StatesModule.styles,
   provinces: z.strictObject({ attrs: z.strictObject({ opacity, filter }) }),
   zones: z.strictObject({ attrs: z.strictObject({ opacity, ...strokeAttrs, filter, mask }) }),
   borders: z.strictObject({
@@ -218,7 +208,7 @@ export const stylesSchema = z.strictObject({
   temperature: z.strictObject({
     attrs: z.strictObject({ opacity, ...fillAttrs, ...strokeAttrs, "font-size": fontSize, filter, mask })
   }),
-  ice: z.strictObject({ attrs: z.strictObject({ opacity, fill: color, ...strokeAttrs, filter }) }),
+  ...IceModule.styles,
   precipitation: z.strictObject({ attrs: z.strictObject({ opacity, fill: color, ...strokeAttrs, filter, mask }) }),
   population: z.strictObject({
     attrs: z.strictObject({
@@ -286,10 +276,7 @@ export const stylesSchema = z.strictObject({
     attrs: z.strictObject({ opacity, filter }),
     options: z.strictObject({ rescale: z.number() }) // TODO: move to global options.markers.resizeOnZoom
   }),
-  military: z.strictObject({
-    attrs: z.strictObject({ opacity, ...strokeAttrs, "fill-opacity": opacity, filter }),
-    options: z.strictObject({ fontSize: z.number(), boxSize: z.number() })
-  }),
+  ...MilitaryModule.styles,
   rulers: z.strictObject({
     attrs: z.strictObject({
       opacity,

@@ -15,6 +15,8 @@ import { onLegendClick } from "@/renderers/draw-legend";
 import { zonesFilter } from "@/renderers/draw-zones";
 import { Services } from "@/services";
 import { declareFont } from "@/services/fonts";
+import { fromLegacySlots } from "@/services/io/legacy";
+import { deserializeModules } from "@/services/io/module-data";
 import { logStats } from "@/services/logging";
 import { clearCache, compareVersions, isValidVersion, parseMapVersion, VERSION } from "@/services/versioning";
 import { ensureEl, escapeHtml, last, link, parseError, rn, safeParseJSON } from "@/utils";
@@ -324,7 +326,7 @@ async function parseLoadedData(data: string[], mapVersion: string | null): Promi
     }
     pack.features = JSON.parse(data[12]);
     pack.cultures = JSON.parse(data[13]);
-    pack.states = JSON.parse(data[14]);
+    deserializeModules(fromLegacySlots(data)); // data[14] states and their armies, data[39] ice
     pack.burgs = JSON.parse(data[15]);
     pack.religions = data[29] ? JSON.parse(data[29]) : ([{ i: 0, name: "No religion" }] as typeof pack.religions);
     pack.provinces = data[30] ? JSON.parse(data[30]) : ([0] as unknown as typeof pack.provinces);
@@ -351,7 +353,7 @@ async function parseLoadedData(data: string[], mapVersion: string | null): Promi
     // data[28] had deprecated cells.crossroad
     // data[33] had deprecated rulers, now replaced by pack.measurers
     pack.cells.routes = data[36] ? JSON.parse(data[36]) : {};
-    pack.ice = data[39] ? JSON.parse(data[39]) : [];
+    // data[39] ice is read by deserializeModules above
     pack.cells.good = data[40] ? Uint16Array.from(data[40].split(","), Number) : new Uint16Array(pack.cells.i.length);
     pack.goods = data[41] ? JSON.parse(data[41]) : [];
     pack.markets = data[42] ? JSON.parse(data[42]) : [];

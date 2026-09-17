@@ -1,4 +1,5 @@
 import { quadtree, sum } from "d3";
+import { DEFAULT_MILITARY_UNITS } from "@/data/military-units";
 import { findAllInQuadtree, gauss, minmax, nth, ra, rand, rn, si } from "../utils";
 import type { State } from "./states-generator";
 
@@ -455,58 +456,7 @@ class MilitaryModule {
   }
 
   getDefaultOptions() {
-    return [
-      {
-        icon: "⚔️",
-        name: "infantry",
-        rural: 0.25,
-        urban: 0.2,
-        crew: 1,
-        power: 1,
-        type: "melee",
-        separate: 0
-      },
-      {
-        icon: "🏹",
-        name: "archers",
-        rural: 0.12,
-        urban: 0.2,
-        crew: 1,
-        power: 1,
-        type: "ranged",
-        separate: 0
-      },
-      {
-        icon: "🐴",
-        name: "cavalry",
-        rural: 0.12,
-        urban: 0.03,
-        crew: 2,
-        power: 2,
-        type: "mounted",
-        separate: 0
-      },
-      {
-        icon: "💣",
-        name: "artillery",
-        rural: 0,
-        urban: 0.03,
-        crew: 8,
-        power: 12,
-        type: "machinery",
-        separate: 0
-      },
-      {
-        icon: "🌊",
-        name: "fleet",
-        rural: 0,
-        urban: 0.015,
-        crew: 100,
-        power: 50,
-        type: "naval",
-        separate: 1
-      }
-    ];
+    return DEFAULT_MILITARY_UNITS;
   }
 
   getName(r: Regiment, regiments: Regiment[]) {

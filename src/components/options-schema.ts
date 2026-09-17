@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { LayerId } from "@/components/layers";
 import { MAX_DENSITY, MIN_DENSITY } from "@/data/graph-density";
 import { CULTURE_SETS } from "@/generators/cultures-generator";
+import { MilitaryModule, StatesModule } from "@/modules";
 import { count, degrees, hexColor, ids, nonNegative, percent, positive, ratio } from "@/utils/schemaUtils";
 
 /** the burg request at its maximum stands for "as many burgs as the land supports" */
@@ -43,20 +44,8 @@ export const burgGroup = z.strictObject({
   preview: z.string().optional()
 });
 
-export const militaryUnit = z.strictObject({
-  icon: z.string(),
-  name: z.string(),
-  rural: nonNegative,
-  urban: nonNegative,
-  crew: positive,
-  power: nonNegative,
-  type: z.string(),
-  separate: z.number().int(),
-  biomes: ids,
-  states: ids,
-  cultures: ids,
-  religions: ids
-});
+// the military module owns the unit shape; re-exported for existing importers
+export { militaryUnit } from "@/modules/military";
 
 export const transport = z.strictObject({
   i: z.number().int(),
@@ -137,7 +126,7 @@ export const mapSchema = z.strictObject({
   style: z.strictObject({ preset: z.string().min(1) }),
   burgs: z.strictObject({ groups: z.array(burgGroup) }),
   labels: z.strictObject({ resizeOnZoom: z.boolean(), groups: z.array(labelGroup) }),
-  military: z.strictObject({ units: z.array(militaryUnit) }),
+  ...MilitaryModule.options.map.schema,
   transports: z.array(transport),
   coastline: coastlineSettings
 });
@@ -168,7 +157,7 @@ export const optionsSchema = z.strictObject({
       sizeVariety: nonNegative,
       growthRate: nonNegative
     }),
-    states: z.strictObject({ limit: count, sizeVariety: nonNegative, growthRate: nonNegative }),
+    ...StatesModule.options.generation.schema,
     provinces: z.strictObject({ ratio: percent }),
     religions: z.strictObject({ limit: count }),
     burgs: z.strictObject({ limit: count }) // AUTO_BURG_LIMIT means "as many as the land supports"
